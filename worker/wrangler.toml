@@ -1,0 +1,25 @@
+name = "ecosystemsca-facebook-api"
+main = "src/index.js"
+compatibility_date = "2026-03-17"
+workers_dev = true
+
+[observability.logs]
+enabled = true
+
+[triggers]
+crons = ["0 */12 * * *"]
+
+[[d1_databases]]
+binding = "REVIEWS_DB"
+database_name = "ecosystemsca-review-archive"
+database_id = "3528e11f-c6f4-4494-bac1-3a03bc338597"
+
+[vars]
+JOBNIMBUS_API_BASE_URL = "https://app.jobnimbus.com"
+JOBNIMBUS_RESOURCE_PATH = "api1/contacts"
+JOBNIMBUS_RECORD_TYPE = "lead"
+JOBNIMBUS_SOURCE = "Facebook Flat Roof Landing"
+JOBNIMBUS_STATUS_NAME = "New"
+GOOGLE_SHEETS_SHEET_NAME = "Lead Log"
+CACHE_TTL_SECONDS = "21600"
+REVIEW_ARCHIVE_CACHE_TTL_SECONDS = "900"

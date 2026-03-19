@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ECO Systems Flat Roof Estimate</title>
+    <meta
+      name="description"
+      content="Answer a few quick questions to see whether your flat roof can be restored instead of replaced."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" type="image/png" href="./assets/ecosystems-logo-only.png" />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <script>
+      const isLocalPreview = ["127.0.0.1", "localhost"].includes(window.location.hostname);
+      window.ECO_LANDING_CONFIG = {
+        apiBaseUrl: isLocalPreview ? "http://127.0.0.1:8787" : "",
+        googlePlaceId: "ChIJZ6r9NmerK4cRuFVIH4BcUxI",
+        googleReviewsUrl:
+          "https://www.google.com/maps/search/?api=1&query=Google&query_place_id=ChIJZ6r9NmerK4cRuFVIH4BcUxI"
+      };
+    </script>
+
+    <div class="page-shell">
+      <main>
+        <section class="intro-block" id="hero" aria-label="Landing page introduction">
+          <img class="intro-logo" src="./assets/ecosystems-logo.png" alt="ECO Systems logo" />
+          <h1>Flat roof restorations starting at only $4,999</h1>
+          <p class="stars-line">
+            <span class="stars" aria-hidden="true">⭐ ⭐ ⭐ ⭐ ⭐</span>
+            <span>LA County LOVES Our Flat Roof Restoration Program</span>
+          </p>
+          <p class="owner-line">
+            Chris the Owner will personally inspect your roof. No high-pressure sales tactics. Just the truth.
+          </p>
+          <p class="survey-line">👇 Answer these quick questions to get a free, fast estimate! 👇</p>
+        </section>
+
+        <section class="form-stage" aria-labelledby="estimate-form-title">
+          <h2 class="sr-only" id="estimate-form-title">Flat roof estimate form</h2>
+
+          <form id="estimate-form" novalidate>
+            <section class="form-step is-active" data-step="1">
+              <div class="step-content step-choice-content">
+                <h3>Is your property in LA County? <span>*</span></h3>
+                <div class="radio-stack">
+                  <label class="radio-option">
+                    <input type="radio" name="county" value="Yes" />
+                    <span>Yes</span>
+                  </label>
+                  <label class="radio-option">
+                    <input type="radio" name="county" value="No" />
+                    <span>No</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-footer single-action">
+                <button type="button" class="footer-button footer-button-next" data-next>Next →</button>
+              </div>
+            </section>
+
+            <section class="form-step" data-step="2" hidden>
+              <div class="step-content">
+                <label class="field-group field-span-full">
+                  <span>Street Address <span>*</span></span>
+                  <input type="text" name="address" autocomplete="street-address" />
+                </label>
+
+                <div class="field-grid address-grid">
+                  <label class="field-group">
+                    <span>City <span>*</span></span>
+                    <input type="text" name="city" autocomplete="address-level2" />
+                  </label>
+                  <label class="field-group">
+                    <span>State <span>*</span></span>
+                    <input type="text" name="state" value="ca" maxlength="2" autocomplete="address-level1" />
+                  </label>
+                </div>
+
+                <label class="field-group zip-group">
+                  <span>Zip code <span>*</span></span>
+                  <input type="text" name="zip" inputmode="numeric" autocomplete="postal-code" />
+                </label>
+              </div>
+
+              <div class="form-footer dual-action">
+                <button type="button" class="footer-button footer-button-prev" data-back>← Prev</button>
+                <button type="button" class="footer-button footer-button-next" data-next>Next →</button>
+              </div>
+            </section>
+
+            <section class="form-step" data-step="3" hidden>
+              <div class="step-content">
+                <label class="field-group field-span-full">
+                  <span>Name <span>*</span></span>
+                  <input type="text" name="fullName" autocomplete="name" />
+                </label>
+
+                <label class="field-group field-span-full">
+                  <span>Cell Phone <span>*</span></span>
+                  <input type="tel" name="phone" autocomplete="tel" inputmode="tel" />
+                </label>
+
+                <label class="field-group field-span-full">
+                  <span>Email address <span>*</span></span>
+                  <input type="email" name="email" autocomplete="email" />
+                </label>
+
+                <label class="field-group hp-field" aria-hidden="true">
+                  <span>Website</span>
+                  <input type="text" name="website" tabindex="-1" autocomplete="off" />
+                </label>
+              </div>
+
+              <div class="form-footer dual-action">
+                <button type="button" class="footer-button footer-button-prev" data-back>← Prev</button>
+                <button type="submit" class="footer-button footer-button-next" id="submit-button">Submit →</button>
+              </div>
+            </section>
+
+            <p class="form-status" id="form-status" role="status" aria-live="polite"></p>
+          </form>
+
+          <section class="submission-confirmation" id="submission-confirmation" hidden aria-live="polite">
+            <p class="submission-confirmation-eyebrow">Request received</p>
+            <h3>Your estimate request was submitted successfully.</h3>
+            <p class="submission-confirmation-copy" id="submission-confirmation-copy">
+              ECO Systems will review your request and follow up shortly.
+            </p>
+            <div class="submission-confirmation-details" id="submission-confirmation-details"></div>
+            <button type="button" class="submission-confirmation-button" id="new-request-button">
+              Submit another request
+            </button>
+          </section>
+        </section>
+
+        <section class="social-proof-band" aria-label="Client reviews summary">
+          <p class="social-proof-copy">
+            <strong>Most flat roofs don’t need to be replaced.</strong>
+            <span> Complete this quick survey to </span>
+            <em>see exactly how much you can save!</em>
+          </p>
+
+          <div class="social-proof-row">
+            <h2>What our clients say about us</h2>
+
+            <div class="social-proof-rating" id="social-proof-rating">
+              <strong id="social-proof-score">5.00</strong>
+              <div class="social-proof-meta">
+                <span class="social-proof-stars" aria-hidden="true">★★★★★</span>
+                <span id="social-proof-count">225 reviews</span>
+              </div>
+            </div>
+
+            <a
+              class="social-proof-button"
+              id="write-review-link"
+              href="https://www.google.com/maps/search/?api=1&query=Google&query_place_id=ChIJy_dFYaGbwoARVTiEWMoxkpY"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Write a review
+            </a>
+          </div>
+        </section>
+
+        <section class="reviews-section" id="reviews" aria-labelledby="reviews-title">
+          <div class="section-heading split-heading">
+            <div>
+              <p class="eyebrow">Google trust signals</p>
+              <h2 id="reviews-title">Customer reviews from ECO Systems on Google.</h2>
+            </div>
+            <a
+              class="button-secondary"
+              id="all-reviews-link"
+              href="https://www.google.com/maps/search/?api=1&query=Google&query_place_id=ChIJy_dFYaGbwoARVTiEWMoxkpY"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Read all reviews on Google
+            </a>
+          </div>
+
+          <div class="reviews-summary" id="reviews-summary">
+            Loading Google review highlights...
+          </div>
+
+          <div class="reviews-grid is-loading" id="reviews-grid" aria-live="polite">
+            <article class="review-card">
+              <p>Loading review highlights...</p>
+            </article>
+          </div>
+
+          <div class="reviews-actions">
+            <button type="button" class="reviews-load-more" id="reviews-load-more" hidden>Load More</button>
+          </div>
+
+          <p class="reviews-note">
+            Google only exposes a featured subset of reviews through its Places API. Open Google to
+            browse the full public review profile and leave a review there.
+          </p>
+        </section>
+
+      </main>
+
+      <footer class="site-footer">
+        <p>ECO Systems, Los Angeles, CA</p>
+        <nav aria-label="Footer">
+          <a href="https://ecosystemsca.com">Home</a>
+          <a href="https://ecosystemsca.co/privacy-2636">Privacy Policy</a>
+          <a href="https://ecosystemsca.com/contact-us/">Contact Us</a>
+        </nav>
+      </footer>
+    </div>
+
+    <script src="./assets/app.js" defer></script>
+  </body>
+</html>
