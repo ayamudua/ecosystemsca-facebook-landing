@@ -1,9 +1,9 @@
 const CONFIG = window.ECO_LANDING_CONFIG || {};
 const API_BASE = (CONFIG.apiBaseUrl || "").replace(/\/$/, "");
-const GOOGLE_PLACE_ID = CONFIG.googlePlaceId || "ChIJy_dFYaGbwoARVTiEWMoxkpY";
+const GOOGLE_PLACE_ID = CONFIG.googlePlaceId || "ChIJt45P39m6woARDs_3xzLtiRY";
 const GOOGLE_REVIEWS_URL =
   CONFIG.googleReviewsUrl ||
-  "https://www.google.com/maps/search/?api=1&query=Google&query_place_id=ChIJy_dFYaGbwoARVTiEWMoxkpY";
+  "https://www.google.com/maps/place/ECO+Systems/@34.0200392,-118.7413853,10z/data=!4m14!1m7!3m6!1s0x80c29ba16145f7cb:0x969231ca58843855!2sECO+Systems!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl!3m5!1s0x80c29ba16145f7cb:0x969231ca58843855!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl?hl=en&entry=ttu&g_ep=EgoyMDI2MDMxOC4xIKXMDSoASAFQAw%3D%3D";
 const GOOGLE_WRITE_REVIEW_URL = GOOGLE_REVIEWS_URL;
 
 const form = document.querySelector("#estimate-form");
@@ -30,9 +30,6 @@ let currentStep = 0;
 let reviews = [];
 let visibleReviewCount = REVIEW_BATCH_SIZE;
 let reviewsSourceUrl = GOOGLE_REVIEWS_URL;
-let reviewSourceMode = "places";
-let archivePage = 0;
-let archiveHasMore = false;
 let isLoadingMoreReviews = false;
 
 if (allReviewsLink) {
@@ -303,7 +300,7 @@ function renderReviews() {
     .join("");
 
   if (reviewsLoadMoreButton) {
-    reviewsLoadMoreButton.hidden = reviewSourceMode === "archive" ? !archiveHasMore : visibleReviewCount >= reviews.length;
+    reviewsLoadMoreButton.hidden = visibleReviewCount >= reviews.length;
     reviewsLoadMoreButton.textContent = isLoadingMoreReviews ? "Loading..." : "Load More";
     reviewsLoadMoreButton.disabled = isLoadingMoreReviews;
   }
@@ -311,47 +308,15 @@ function renderReviews() {
 
 async function loadReviews() {
   try {
-    await loadArchiveReviews({ append: false });
+    await loadFeaturedReviews();
   } catch (error) {
-    try {
-      await loadFeaturedReviews();
-    } catch {
-      reviewSourceMode = "places";
-      archivePage = 0;
-      archiveHasMore = false;
-      reviews = [];
-      expandedReviewIndexes.clear();
-      isLoadingMoreReviews = false;
-      reviewSummary.textContent =
-        "Google review highlights are temporarily unavailable. Use the button above to open the full Google review profile.";
-      renderReviews();
-    }
-  }
-}
-
-async function loadArchiveReviews({ append }) {
-  const nextPage = append ? archivePage + 1 : 1;
-  isLoadingMoreReviews = append;
-  renderReviews();
-
-  const response = await fetch(`${API_BASE}/api/reviews/archive?page=${nextPage}&pageSize=${REVIEW_BATCH_SIZE}`);
-  if (!response.ok) {
+    reviews = [];
+    expandedReviewIndexes.clear();
     isLoadingMoreReviews = false;
-    throw new Error("Archived reviews are not available.");
+    reviewSummary.textContent =
+      "Google review highlights are temporarily unavailable. Use the button above to open the full Google review profile.";
+    renderReviews();
   }
-
-  const payload = await response.json();
-  reviewSourceMode = "archive";
-  archivePage = payload.page || nextPage;
-  archiveHasMore = Boolean(payload.hasMore);
-  reviewsSourceUrl = payload.sourceUrl || GOOGLE_REVIEWS_URL;
-  expandedReviewIndexes.clear();
-  reviews = append ? reviews.concat(payload.reviews || []) : payload.reviews || [];
-  visibleReviewCount = reviews.length;
-  isLoadingMoreReviews = false;
-
-  updateReviewSummary(payload, true);
-  renderReviews();
 }
 
 async function loadFeaturedReviews() {
@@ -361,40 +326,44 @@ async function loadFeaturedReviews() {
   }
 
   const payload = await response.json();
-  reviewSourceMode = "places";
-  archivePage = 0;
-  archiveHasMore = false;
   reviews = payload.reviews || [];
   reviewsSourceUrl = payload.sourceUrl || GOOGLE_REVIEWS_URL;
   expandedReviewIndexes.clear();
   visibleReviewCount = Math.min(REVIEW_BATCH_SIZE, reviews.length || REVIEW_BATCH_SIZE);
 
-  updateReviewSummary(payload, false);
+  updateReviewSummary(payload);
   renderReviews();
 }
 
-function updateReviewSummary(payload, isArchive) {
-  const safeRating = escapeHtml(String(payload.rating || "4.9"));
-  const safeReviewCount = escapeHtml(String(payload.reviewCount || reviews.length || "many"));
+function updateReviewSummary(payload) {
+  const hasRating = payload.rating !== null && payload.rating !== undefined;
+  const hasReviewCount = Number(payload.reviewCount || 0) > 0;
 
-  reviewSummary.innerHTML = isArchive
-    ? `
-      <strong>${safeRating} / 5</strong>
-      from ${safeReviewCount} synced Google reviews.
-      This archive is served from ECO Systems' verified business-profile review sync and includes owner responses when available.
-    `
-    : `
+  if (hasRating && hasReviewCount) {
+    const safeRating = escapeHtml(String(payload.rating));
+    const safeReviewCount = escapeHtml(String(payload.reviewCount));
+    reviewSummary.innerHTML = `
       <strong>${safeRating} / 5</strong>
       from ${safeReviewCount} Google reviews.
-      Featured Google reviews available through the API are shown below. Open Google for the full public archive.
+      Featured live Google reviews available through the Places API are shown below. Open Google for the full public review profile.
     `;
+  } else {
+    const safeBusinessName = escapeHtml(payload.businessName || "ECO Systems");
+    reviewSummary.innerHTML = `
+      <strong>${safeBusinessName}</strong>
+      is connected to the live Google listing, but Google is not returning featured review highlights for this profile right now.
+      Use the Google button to open the full public profile directly.
+    `;
+  }
 
   if (socialProofScore) {
-    socialProofScore.textContent = Number(payload.rating || 5).toFixed(2);
+    socialProofScore.textContent = hasRating ? Number(payload.rating).toFixed(2) : "--";
   }
 
   if (socialProofCount) {
-    socialProofCount.textContent = `${payload.reviewCount || reviews.length || 0} reviews`;
+    socialProofCount.textContent = hasReviewCount
+      ? `${payload.reviewCount} reviews`
+      : "Open Google profile";
   }
 
   if (payload.sourceUrl) {
@@ -422,14 +391,6 @@ document.querySelectorAll("[data-back]").forEach((button) => {
 });
 
 reviewsLoadMoreButton?.addEventListener("click", () => {
-  if (reviewSourceMode === "archive") {
-    loadArchiveReviews({ append: true }).catch(() => {
-      isLoadingMoreReviews = false;
-      renderReviews();
-    });
-    return;
-  }
-
   visibleReviewCount = Math.min(visibleReviewCount + REVIEW_BATCH_SIZE, reviews.length);
   renderReviews();
 });

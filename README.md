@@ -17,6 +17,7 @@ Minimal static landing page plus Cloudflare Worker for a flat-roof Facebook camp
 - D1-backed review archive endpoints that can serve a fuller synced Google Business Profile archive plus owner responses
 - Protected admin sync endpoint and scheduled sync hook for archived Google Business Profile reviews
 - Full-review CTA that sends visitors to the complete Google review profile
+- Current live mode on the landing page uses the public Google Places review endpoint directly and does not depend on the archive sync being populated
 
 ## Deploy shape
 
@@ -41,12 +42,13 @@ Required values:
 - `GOOGLE_BUSINESS_CLIENT_ID`
 - `GOOGLE_BUSINESS_CLIENT_SECRET`
 - `GOOGLE_BUSINESS_REFRESH_TOKEN`
-- `GOOGLE_BUSINESS_ACCOUNT_ID`
 - `GOOGLE_BUSINESS_LOCATION_ID`
 - `REVIEW_ARCHIVE_ADMIN_TOKEN`
 - `GOOGLE_SHEETS_CLIENT_EMAIL`
 - `GOOGLE_SHEETS_PRIVATE_KEY`
 - `GOOGLE_SHEETS_SPREADSHEET_ID`
+
+`GOOGLE_BUSINESS_ACCOUNT_ID` is optional when the Google Cloud project has Business Profile account-management API access enabled. If omitted, the Worker will try to discover the first accessible account automatically.
 
 For the archive feature, also bind a D1 database as `REVIEWS_DB` and apply the migration in [worker/migrations/0001_google_review_archive.sql](worker/migrations/0001_google_review_archive.sql).
 
@@ -74,7 +76,7 @@ Suggested header row for the sheet:
 3. Apply [worker/migrations/0001_google_review_archive.sql](worker/migrations/0001_google_review_archive.sql).
 4. Create a Google OAuth client that can access the verified ECO Systems Business Profile.
 5. Generate a refresh token with `business.manage` scope for a user who has access to the ECO Systems profile.
-6. Add `GOOGLE_BUSINESS_CLIENT_ID`, `GOOGLE_BUSINESS_CLIENT_SECRET`, `GOOGLE_BUSINESS_REFRESH_TOKEN`, `GOOGLE_BUSINESS_ACCOUNT_ID`, and `GOOGLE_BUSINESS_LOCATION_ID` to Worker secrets.
+6. Add `GOOGLE_BUSINESS_CLIENT_ID`, `GOOGLE_BUSINESS_CLIENT_SECRET`, `GOOGLE_BUSINESS_REFRESH_TOKEN`, and `GOOGLE_BUSINESS_LOCATION_ID` to Worker secrets. Add `GOOGLE_BUSINESS_ACCOUNT_ID` too if you already know it or if the project cannot use account auto-discovery.
 7. Add `REVIEW_ARCHIVE_ADMIN_TOKEN` to protect the manual sync endpoint.
 8. Run `POST /api/admin/reviews/sync` with that admin token to seed the archive.
 
@@ -90,7 +92,11 @@ Protected admin endpoints:
 
 `REVIEW_ARCHIVE_ADMIN_TOKEN` is not a Google credential and should not be entered into Google OAuth setup screens. It is just an internal shared secret used by this Worker to protect manual archive-sync endpoints.
 
+Current ECO Systems Google credential status: the latest client ID, client secret, and refresh token can mint an access token successfully, but Google is still rejecting Business Profile account and review API calls because the Cloud project either has the relevant APIs disabled or still has `0` quota for them. Until `mybusiness.googleapis.com` and `mybusinessaccountmanagement.googleapis.com` are enabled and approved for the project, the archive sync cannot enumerate accounts or import reviews.
+
 The landing page now prefers the archived review endpoint first. If the archive is not configured or empty, it falls back to the current Places-based featured reviews.
+
+Temporary ECO Systems operating mode while Google Business Profile quota approval is pending: the landing page is configured to use the live public Google Places listing only. The current place record resolved from the ECO Systems contact address is `Eco Roof Solar` at `2633 Lincoln Blvd, Santa Monica, CA 90405` with place ID `ChIJt45P39m6woARDs_3xzLtiRY`. Google is currently returning the public listing link for that place but not any rating or review fields, so the landing page opens the real Google profile even when featured review cards are unavailable.
 
 ## Local development
 

@@ -400,14 +400,15 @@ async function syncGoogleBusinessProfileReviews(env) {
 
   try {
     const accessToken = await getGoogleBusinessAccessToken(env);
+    const accountId = await resolveGoogleBusinessAccountId(env, accessToken);
 
     do {
-      const page = await fetchGoogleBusinessProfileReviewsPage(env, accessToken, nextPageToken);
+      const page = await fetchGoogleBusinessProfileReviewsPage(env, accessToken, accountId, nextPageToken);
       totalReviewCount = Number(page.totalReviewCount || totalReviewCount || 0);
       averageRating = page.averageRating ?? averageRating;
 
       for (const review of page.reviews || []) {
-        const normalizedReview = normalizeGoogleBusinessProfileReview(review, env);
+        const normalizedReview = normalizeGoogleBusinessProfileReview(review, env, accountId);
         const outcome = await upsertArchivedReview(env, normalizedReview, startedAt);
 
         importedCount += 1;
@@ -423,7 +424,7 @@ async function syncGoogleBusinessProfileReviews(env) {
       SET is_active = 0
       WHERE account_id = ? AND location_id = ? AND synced_at <> ?`
     )
-      .bind(env.GOOGLE_BUSINESS_ACCOUNT_ID, env.GOOGLE_BUSINESS_LOCATION_ID, startedAt)
+      .bind(accountId, env.GOOGLE_BUSINESS_LOCATION_ID, startedAt)
       .run();
 
     await finalizeSyncRun(env, syncRunId, {
@@ -457,9 +458,9 @@ async function syncGoogleBusinessProfileReviews(env) {
   }
 }
 
-async function fetchGoogleBusinessProfileReviewsPage(env, accessToken, pageToken = "") {
+async function fetchGoogleBusinessProfileReviewsPage(env, accessToken, accountId, pageToken = "") {
   const url = new URL(
-    `https://mybusiness.googleapis.com/v4/accounts/${env.GOOGLE_BUSINESS_ACCOUNT_ID}/locations/${env.GOOGLE_BUSINESS_LOCATION_ID}/reviews`
+    `https://mybusiness.googleapis.com/v4/accounts/${accountId}/locations/${env.GOOGLE_BUSINESS_LOCATION_ID}/reviews`
   );
   url.searchParams.set("pageSize", "50");
   url.searchParams.set("orderBy", "updateTime desc");
@@ -480,6 +481,37 @@ async function fetchGoogleBusinessProfileReviewsPage(env, accessToken, pageToken
   }
 
   return response.json();
+}
+
+async function resolveGoogleBusinessAccountId(env, accessToken) {
+  if (env.GOOGLE_BUSINESS_ACCOUNT_ID) {
+    return env.GOOGLE_BUSINESS_ACCOUNT_ID;
+  }
+
+  const response = await fetch("https://mybusinessaccountmanagement.googleapis.com/v1/accounts", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(
+      `Google Business Profile account discovery failed. Set GOOGLE_BUSINESS_ACCOUNT_ID explicitly or enable account-management API access for this project. ${detail}`
+    );
+  }
+
+  const payload = await response.json();
+  const accountName = payload.accounts?.[0]?.name || "";
+  const accountId = accountName.replace(/^accounts\//, "");
+
+  if (!accountId) {
+    throw new Error(
+      "Google Business Profile account discovery returned no accounts. Confirm the OAuth user has access to the business profile or set GOOGLE_BUSINESS_ACCOUNT_ID explicitly."
+    );
+  }
+
+  return accountId;
 }
 
 async function getGoogleBusinessAccessToken(env) {
@@ -505,11 +537,11 @@ async function getGoogleBusinessAccessToken(env) {
   return tokenData.access_token;
 }
 
-function normalizeGoogleBusinessProfileReview(review, env) {
+function normalizeGoogleBusinessProfileReview(review, env, accountId) {
   return {
     reviewId: review.reviewId || extractReviewId(review.name),
     googleResourceName: review.name || "",
-    accountId: env.GOOGLE_BUSINESS_ACCOUNT_ID,
+    accountId,
     locationId: env.GOOGLE_BUSINESS_LOCATION_ID,
     authorName: review.reviewer?.displayName || "Google Reviewer",
     authorPhotoUrl: review.reviewer?.profilePhotoUrl || "",
@@ -701,7 +733,7 @@ function ensureArchiveDependencies(env) {
 
   if (!hasGoogleBusinessSyncConfig(env)) {
     throw new Error(
-      "Google Business Profile archive sync requires GOOGLE_BUSINESS_CLIENT_ID, GOOGLE_BUSINESS_CLIENT_SECRET, GOOGLE_BUSINESS_REFRESH_TOKEN, GOOGLE_BUSINESS_ACCOUNT_ID, and GOOGLE_BUSINESS_LOCATION_ID."
+      "Google Business Profile archive sync requires GOOGLE_BUSINESS_CLIENT_ID, GOOGLE_BUSINESS_CLIENT_SECRET, GOOGLE_BUSINESS_REFRESH_TOKEN, and GOOGLE_BUSINESS_LOCATION_ID. GOOGLE_BUSINESS_ACCOUNT_ID is optional when account discovery is enabled for the project."
     );
   }
 }
@@ -711,7 +743,6 @@ function hasGoogleBusinessSyncConfig(env) {
     env.GOOGLE_BUSINESS_CLIENT_ID &&
       env.GOOGLE_BUSINESS_CLIENT_SECRET &&
       env.GOOGLE_BUSINESS_REFRESH_TOKEN &&
-      env.GOOGLE_BUSINESS_ACCOUNT_ID &&
       env.GOOGLE_BUSINESS_LOCATION_ID
   );
 }
