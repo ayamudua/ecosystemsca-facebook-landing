@@ -176,7 +176,7 @@ async function handleReviews(request, env) {
     businessName: place.displayName?.text || "ECO Systems",
     rating: place.rating || null,
     reviewCount: place.userRatingCount || 0,
-    sourceUrl: place.googleMapsUri || env.GOOGLE_REVIEWS_URL || null,
+    sourceUrl: env.GOOGLE_REVIEWS_URL || place.googleMapsUri || null,
     reviews: normalizePlacesReviews(place.reviews || [], env)
   };
 
