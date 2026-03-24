@@ -16,6 +16,53 @@
 			"isBackground": true,
 			"problemMatcher": [],
 			"group": "test"
+		},
+		{
+			"label": "Deploy Worker (prd)",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"wrangler",
+				"deploy",
+				"--env",
+				"prd",
+				"--config",
+				"worker/wrangler.toml"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Deploy Worker (devmt)",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"wrangler",
+				"deploy",
+				"--env",
+				"devmt",
+				"--config",
+				"worker/wrangler.toml"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Deploy Pages (production)",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"wrangler",
+				"pages",
+				"deploy",
+				"site",
+				"--project-name",
+				"ecosystemsca-facebook-landing",
+				"--branch",
+				"production"
+			],
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

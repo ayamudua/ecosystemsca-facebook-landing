@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "dev": "wrangler dev --env devmt",
+    "deploy": "wrangler deploy --env prd",
+    "deploy:prd": "wrangler deploy --env prd",
+    "deploy:devmt": "wrangler deploy --env devmt"
   },
   "devDependencies": {
     "wrangler": "^4.8.0"

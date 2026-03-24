@@ -8,6 +8,7 @@ JOBNIMBUS_STATUS_NAME="New"
 GOOGLE_PLACES_API_KEY="replace-with-google-places-key"
 GOOGLE_PLACE_ID="ChIJy_dFYaGbwoARVTiEWMoxkpY"
 GOOGLE_REVIEWS_URL="https://www.google.com/maps/search/?api=1&query=Google&query_place_id=ChIJy_dFYaGbwoARVTiEWMoxkpY"
+GOOGLE_REVIEWS_ALTERNATE_URL="https://www.google.com/search?q=your-business-name#lkt=LocalPoiReviews"
 
 GOOGLE_BUSINESS_CLIENT_ID="replace-with-google-business-client-id"
 GOOGLE_BUSINESS_CLIENT_SECRET="replace-with-google-business-client-secret"
@@ -20,6 +21,18 @@ GOOGLE_SHEETS_CLIENT_EMAIL="service-account@project-id.iam.gserviceaccount.com"
 GOOGLE_SHEETS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 GOOGLE_SHEETS_SPREADSHEET_ID="replace-with-sheet-id"
 GOOGLE_SHEETS_SHEET_NAME="Lead Log"
+
+TURNSTILE_SITE_KEY="replace-with-cloudflare-turnstile-site-key"
+TURNSTILE_SECRET_KEY="replace-with-cloudflare-turnstile-secret-key"
+
+LEAD_NOTIFICATION_EMAIL_TO="infoeco411@gmail.com"
+LEAD_NOTIFICATION_EMAIL_FROM="alerts@ecosystemsca.net"
+LEAD_NOTIFICATION_EMAIL_FROM_NAME="ECO Systems Lead Alerts"
+# Requires a Cloudflare send_email binding named LEAD_NOTIFICATION_EMAIL,
+# a routed sender such as alerts@ecosystemsca.net, and a verified destination
+# address such as infoeco411@gmail.com in Cloudflare Email Routing.
+# Optional subject override.
+# LEAD_NOTIFICATION_SUBJECT_PREFIX="New ECO Systems lead"
 
 REVIEW_ARCHIVE_ADMIN_TOKEN="replace-with-any-random-long-secret-used-only-by-this-worker"
 # Backward-compatible legacy name, not recommended for new setup:

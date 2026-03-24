@@ -1,25 +1,72 @@
 name = "ecosystemsca-facebook-api"
+account_id = "eaacedc62504d7b5ae02d4f82e05bfb1"
 main = "src/index.js"
 compatibility_date = "2026-03-17"
-workers_dev = true
 
 [observability.logs]
 enabled = true
 
-[triggers]
+[env.prd]
+name = "prd"
+workers_dev = true
+routes = [
+	{ pattern = "ecosystemsca.net/api/*", zone_name = "ecosystemsca.net" },
+	{ pattern = "www.ecosystemsca.net/api/*", zone_name = "ecosystemsca.net" }
+]
+
+[env.prd.triggers]
 crons = ["0 */12 * * *"]
 
-[[d1_databases]]
+[[env.prd.d1_databases]]
 binding = "REVIEWS_DB"
 database_name = "ecosystemsca-review-archive"
-database_id = "3528e11f-c6f4-4494-bac1-3a03bc338597"
+database_id = "c8c535f4-65ce-4903-abc2-1ad2534b5846"
 
-[vars]
+[[env.prd.send_email]]
+name = "LEAD_NOTIFICATION_EMAIL"
+destination_address = "infoeco411@gmail.com"
+allowed_sender_addresses = ["alerts@ecosystemsca.net"]
+
+[env.prd.vars]
 JOBNIMBUS_API_BASE_URL = "https://app.jobnimbus.com"
 JOBNIMBUS_RESOURCE_PATH = "api1/contacts"
 JOBNIMBUS_RECORD_TYPE = "lead"
 JOBNIMBUS_SOURCE = "Facebook Flat Roof Landing"
 JOBNIMBUS_STATUS_NAME = "New"
-GOOGLE_SHEETS_SHEET_NAME = "Lead Log"
+GOOGLE_BUSINESS_NAME = "ECO Systems"
+GOOGLE_SHEETS_SHEET_NAME = "Facebook-Ads-Leads-Backup"
+LEAD_NOTIFICATION_EMAIL_TO = "infoeco411@gmail.com"
+LEAD_NOTIFICATION_EMAIL_FROM = "alerts@ecosystemsca.net"
+LEAD_NOTIFICATION_EMAIL_FROM_NAME = "ECO Systems Lead Alerts"
+ALLOWED_ORIGIN = "https://ecosystemsca.net"
 CACHE_TTL_SECONDS = "21600"
 REVIEW_ARCHIVE_CACHE_TTL_SECONDS = "900"
+
+[env.devmt]
+name = "devmt"
+workers_dev = true
+
+[[env.devmt.d1_databases]]
+binding = "REVIEWS_DB"
+database_name = "ecosystemsca-review-archive-devmt"
+database_id = "2df3a4a8-e637-40fd-900b-8b40eea2743b"
+
+[[env.devmt.send_email]]
+name = "LEAD_NOTIFICATION_EMAIL"
+destination_address = "infoeco411@gmail.com"
+allowed_sender_addresses = ["alerts@ecosystemsca.net"]
+
+[env.devmt.vars]
+JOBNIMBUS_API_BASE_URL = "https://app.jobnimbus.com"
+JOBNIMBUS_RESOURCE_PATH = "api1/contacts"
+JOBNIMBUS_RECORD_TYPE = "lead"
+JOBNIMBUS_SOURCE = "Facebook Flat Roof Landing - DEVMT"
+JOBNIMBUS_STATUS_NAME = "New"
+GOOGLE_BUSINESS_NAME = "ECO Systems"
+GOOGLE_SHEETS_SHEET_NAME = "Facebook-Ads-Leads-Backup-Dev"
+LEAD_NOTIFICATION_EMAIL_TO = "infoeco411@gmail.com"
+LEAD_NOTIFICATION_EMAIL_FROM = "alerts@ecosystemsca.net"
+LEAD_NOTIFICATION_EMAIL_FROM_NAME = "ECO Systems Lead Alerts"
+ALLOWED_ORIGIN = "*"
+CACHE_TTL_SECONDS = "300"
+REVIEW_ARCHIVE_CACHE_TTL_SECONDS = "120"

@@ -1,3 +1,5 @@
+import { EmailMessage } from "cloudflare:email";
+
 const JSON_HEADERS = {
   "Content-Type": "application/json; charset=utf-8"
 };
@@ -6,6 +8,11 @@ const DEFAULT_CACHE_TTL_SECONDS = 21600;
 const DEFAULT_ARCHIVE_CACHE_TTL_SECONDS = 900;
 const DEFAULT_ARCHIVE_PAGE_SIZE = 6;
 const MAX_ARCHIVE_PAGE_SIZE = 24;
+const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+const DEFAULT_LEAD_NOTIFICATION_EMAIL = "infoeco411@gmail.com";
+const DEFAULT_LEAD_NOTIFICATION_FROM_EMAIL = "alerts@ecosystemsca.net";
+const DEFAULT_LEAD_NOTIFICATION_FROM_NAME = "ECO Systems Lead Alerts";
+const DEFAULT_LEAD_NOTIFICATION_SUBJECT_PREFIX = "New ECO Systems lead";
 
 export default {
   async fetch(request, env) {
@@ -70,6 +77,18 @@ async function handleLead(request, env) {
     return json({ ok: false, message: errors[0] }, 400, env);
   }
 
+  const turnstileVerification = await verifyTurnstileSubmission(body, request, env);
+  if (!turnstileVerification.ok) {
+    return json(
+      {
+        ok: false,
+        message: turnstileVerification.message
+      },
+      turnstileVerification.status,
+      env
+    );
+  }
+
   let outcome = "success";
   let jobNimbusStatus = 0;
   let upstreamMessage = "Lead submitted successfully.";
@@ -103,6 +122,17 @@ async function handleLead(request, env) {
     });
   } catch (error) {
     console.error("Google Sheets logging failed", error);
+  }
+
+  try {
+    await sendLeadNotificationEmail(lead, env, {
+      outcome,
+      jobNimbusStatus,
+      upstreamMessage,
+      upstreamResponseText
+    });
+  } catch (error) {
+    console.error("Lead email notification failed", error);
   }
 
   if (outcome === "failed") {
@@ -173,10 +203,11 @@ async function handleReviews(request, env) {
   const payload = {
     ok: true,
     source: "google-places-featured",
-    businessName: place.displayName?.text || "ECO Systems",
+    businessName: env.GOOGLE_BUSINESS_NAME || place.displayName?.text || "ECO Systems",
     rating: place.rating || null,
     reviewCount: place.userRatingCount || 0,
     sourceUrl: env.GOOGLE_REVIEWS_URL || place.googleMapsUri || null,
+    alternateSourceUrl: env.GOOGLE_REVIEWS_ALTERNATE_URL || null,
     reviews: normalizePlacesReviews(place.reviews || [], env)
   };
 
@@ -606,7 +637,6 @@ async function upsertArchivedReview(env, review, syncedAt) {
       review.reviewId,
       review.googleResourceName,
       review.accountId,
-      review.locationId,
       review.authorName,
       review.authorPhotoUrl,
       review.isAnonymous ? 1 : 0,
@@ -614,8 +644,6 @@ async function upsertArchivedReview(env, review, syncedAt) {
       review.comment,
       review.createTime,
       review.updateTime,
-      review.sourceUrl,
-      review.ownerReplyComment,
       review.ownerReplyUpdateTime,
       review.rawPayloadJson,
       syncedAt
@@ -966,8 +994,295 @@ async function logLeadToGoogleSheets(lead, env, result) {
   );
 
   if (!response.ok) {
-    throw new Error(`Google Sheets append failed with status ${response.status}.`);
+    const detail = await response.text();
+    throw new Error(`Google Sheets append failed with status ${response.status}: ${truncateText(detail, 2000)}`);
   }
+}
+
+async function sendLeadNotificationEmail(lead, env, result) {
+  const recipientEmail = normalizeEmailAddress(env.LEAD_NOTIFICATION_EMAIL_TO || DEFAULT_LEAD_NOTIFICATION_EMAIL);
+
+  if (!recipientEmail) {
+    throw new Error("Lead notification email recipient is not configured.");
+  }
+
+  if (!env.LEAD_NOTIFICATION_EMAIL || typeof env.LEAD_NOTIFICATION_EMAIL.send !== "function") {
+    throw new Error("Cloudflare send_email binding LEAD_NOTIFICATION_EMAIL is not configured.");
+  }
+
+  const senderEmail = normalizeEmailAddress(env.LEAD_NOTIFICATION_EMAIL_FROM || DEFAULT_LEAD_NOTIFICATION_FROM_EMAIL);
+  const senderName = clean(env.LEAD_NOTIFICATION_EMAIL_FROM_NAME || DEFAULT_LEAD_NOTIFICATION_FROM_NAME);
+  const subjectPrefix = clean(env.LEAD_NOTIFICATION_SUBJECT_PREFIX || DEFAULT_LEAD_NOTIFICATION_SUBJECT_PREFIX);
+  const subject = buildLeadNotificationSubject(lead, env, result, subjectPrefix);
+  const textBody = buildLeadNotificationText(lead, env, result);
+  const htmlBody = buildLeadNotificationHtml(lead, env, result);
+  const replyToEmail = normalizeEmailAddress(lead.contact.email);
+  const replyToName = clean(lead.contact.fullName || `${lead.contact.firstName} ${lead.contact.lastName}`);
+  const rawMessage = buildLeadNotificationRawEmail({
+    senderEmail,
+    senderName,
+    recipientEmail,
+    subject,
+    textBody,
+    htmlBody,
+    replyToEmail,
+    replyToName
+  });
+  const message = new EmailMessage(senderEmail, recipientEmail, rawMessage);
+
+  await env.LEAD_NOTIFICATION_EMAIL.send(message);
+}
+
+async function verifyTurnstileSubmission(body, request, env) {
+  const secretKey = clean(env.TURNSTILE_SECRET_KEY);
+  if (!secretKey) {
+    console.error("Turnstile secret is not configured.");
+    return {
+      ok: false,
+      status: 503,
+      message: "Security verification is temporarily unavailable. Please call or text 310-340-7777."
+    };
+  }
+
+  const token = clean(body?.meta?.turnstileToken || body?.turnstileToken);
+  if (!token) {
+    return {
+      ok: false,
+      status: 400,
+      message: "Please complete the security check and try again."
+    };
+  }
+
+  const response = await fetch(TURNSTILE_VERIFY_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      secret: secretKey,
+      response: token,
+      remoteip: request.headers.get("cf-connecting-ip") || ""
+    })
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    console.error("Turnstile siteverify request failed", {
+      status: response.status,
+      body: detail
+    });
+    return {
+      ok: false,
+      status: 502,
+      message: "Security verification failed. Please try again."
+    };
+  }
+
+  const result = await response.json();
+  if (!result.success) {
+    console.warn("Turnstile verification rejected lead submission", {
+      hostname: result.hostname || "",
+      errorCodes: result["error-codes"] || []
+    });
+    return {
+      ok: false,
+      status: 400,
+      message: "Please complete the security check and try again."
+    };
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    message: ""
+  };
+}
+
+function buildLeadNotificationSubject(lead, env, result, subjectPrefix) {
+  const label = result.outcome === "failed" ? "FAILED" : "SUCCESS";
+  const contactName = clean(lead.contact.fullName || `${lead.contact.firstName} ${lead.contact.lastName}`) || "Unknown lead";
+  const city = clean(lead.property.city);
+  const state = clean(lead.property.state);
+  const location = [city, state].filter(Boolean).join(", ");
+  const environmentName = clean(env.JOBNIMBUS_SOURCE);
+  const suffix = [contactName, location].filter(Boolean).join(" - ");
+
+  return [subjectPrefix, label, environmentName || null, suffix || null].filter(Boolean).join(" | ");
+}
+
+function buildLeadNotificationText(lead, env, result) {
+  const contactName = clean(lead.contact.fullName || `${lead.contact.firstName} ${lead.contact.lastName}`) || "Unknown";
+  const propertyAddress = clean(lead.property.fullAddress) || buildFullAddress(lead.property) || "Unknown";
+  const mapsUrl = buildGoogleMapsUrl(propertyAddress);
+  const lines = [
+    "New ECO Systems lead received.",
+    "",
+    `Name: ${contactName}`,
+    `Phone: ${lead.contact.phone || "-"}`,
+    `Email: ${lead.contact.email || "-"}`,
+    `Address: ${propertyAddress}`,
+    mapsUrl ? `Map: ${mapsUrl}` : null,
+    lead.property.county ? `County: ${lead.property.county}` : null,
+    `Submitted at: ${lead.meta.submittedAt || new Date().toISOString()}`,
+    `Lead source: ${env.JOBNIMBUS_SOURCE || lead.meta.source || "Facebook Flat Roof Landing"}`
+  ].filter(Boolean);
+
+  if (result.outcome === "failed") {
+    lines.push(
+      "",
+      "CRM delivery warning",
+      `JobNimbus status: ${String(result.jobNimbusStatus || "not returned")}`,
+      `Details: ${truncateText(result.upstreamMessage || "", 1200) || "-"}`
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function buildLeadNotificationHtml(lead, env, result) {
+  const contactName = clean(lead.contact.fullName || `${lead.contact.firstName} ${lead.contact.lastName}`) || "Unknown";
+  const propertyAddress = clean(lead.property.fullAddress) || buildFullAddress(lead.property) || "Unknown";
+  const mapsUrl = buildGoogleMapsUrl(propertyAddress);
+  const submittedAt = lead.meta.submittedAt || new Date().toISOString();
+  const source = env.JOBNIMBUS_SOURCE || lead.meta.source || "Facebook Flat Roof Landing";
+  const rows = [
+    buildLeadNotificationDetailRow("Name", escapeHtml(contactName)),
+    buildLeadNotificationDetailRow(
+      "Phone",
+      lead.contact.phone ? buildHtmlLink(`tel:${lead.contact.phone}`, escapeHtml(lead.contact.phone), true) : escapeHtml("-")
+    ),
+    buildLeadNotificationDetailRow(
+      "Email",
+      lead.contact.email ? buildHtmlLink(`mailto:${lead.contact.email}`, escapeHtml(lead.contact.email), true) : escapeHtml("-")
+    ),
+    buildLeadNotificationDetailRow(
+      "Address",
+      mapsUrl ? buildHtmlLink(mapsUrl, escapeHtml(propertyAddress), true) : escapeHtml(propertyAddress)
+    ),
+    lead.property.county ? buildLeadNotificationDetailRow("County", escapeHtml(lead.property.county)) : "",
+    buildLeadNotificationDetailRow("Submitted at", escapeHtml(submittedAt)),
+    buildLeadNotificationDetailRow("Lead source", escapeHtml(source))
+  ].filter(Boolean);
+
+  const failureNotice =
+    result.outcome === "failed"
+      ? `<div style="margin:0 0 16px;padding:12px 14px;border:1px solid #d97706;background:#fff7ed;color:#9a3412;border-radius:8px;"><strong>CRM delivery warning</strong><br>${escapeHtml(
+          `JobNimbus status: ${String(result.jobNimbusStatus || "not returned")}`
+        )}<br>${escapeHtml(truncateText(result.upstreamMessage || "", 1200) || "-")}</div>`
+      : "";
+
+  return [
+    "<!DOCTYPE html>",
+    '<html lang="en">',
+    '<body style="margin:0;padding:24px;background:#f5f2ea;font-family:Arial,sans-serif;color:#1f2937;">',
+    '<div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;">',
+    '<h1 style="margin:0 0 16px;font-size:24px;line-height:1.2;color:#111827;">New ECO Systems lead received</h1>',
+    failureNotice,
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">',
+    rows.join(""),
+    "</table>",
+    "</div>",
+    "</body>",
+    "</html>"
+  ].join("");
+}
+
+function buildLeadNotificationRawEmail({
+  senderEmail,
+  senderName,
+  recipientEmail,
+  subject,
+  textBody,
+  htmlBody,
+  replyToEmail,
+  replyToName
+}) {
+  const boundary = `boundary_${crypto.randomUUID()}`;
+  const headers = [
+    `From: ${formatEmailHeader(senderName, senderEmail)}`,
+    `To: ${formatEmailHeader("", recipientEmail)}`,
+    `Subject: ${sanitizeHeaderValue(subject)}`,
+    `Date: ${new Date().toUTCString()}`,
+    `Message-ID: <${crypto.randomUUID()}@${extractEmailDomain(senderEmail) || "ecosystemsca.net"}>`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/alternative; boundary="${boundary}"`
+  ];
+
+  if (replyToEmail) {
+    headers.push(`Reply-To: ${formatEmailHeader(replyToName || "", replyToEmail)}`);
+  }
+
+  return [
+    ...headers,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: 7bit",
+    "",
+    textBody,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/html; charset=UTF-8",
+    "Content-Transfer-Encoding: 7bit",
+    "",
+    htmlBody,
+    "",
+    `--${boundary}--`,
+    ""
+  ].join("\r\n");
+}
+
+function buildLeadNotificationDetailRow(label, value) {
+  return `<tr><td style="padding:0 0 12px;vertical-align:top;width:140px;font-weight:700;color:#111827;">${escapeHtml(label)}</td><td style="padding:0 0 12px;color:#374151;">${value}</td></tr>`;
+}
+
+function buildHtmlLink(href, label, enabled) {
+  if (!enabled) {
+    return label;
+  }
+
+  return `<a href="${escapeHtmlAttribute(href)}" style="color:#0f766e;text-decoration:underline;">${label}</a>`;
+}
+
+function buildGoogleMapsUrl(address) {
+  const normalizedAddress = clean(address);
+
+  if (!normalizedAddress) {
+    return "";
+  }
+
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(normalizedAddress)}`;
+}
+
+function formatEmailHeader(name, email) {
+  const sanitizedEmail = sanitizeHeaderValue(email);
+  const sanitizedName = sanitizeHeaderValue(name);
+
+  if (!sanitizedName) {
+    return `<${sanitizedEmail}>`;
+  }
+
+  return `"${sanitizedName.replace(/"/g, "'")}" <${sanitizedEmail}>`;
+}
+
+function sanitizeHeaderValue(value) {
+  return String(value || "").replace(/[\r\n]+/g, " ").trim();
+}
+
+function extractEmailDomain(email) {
+  const normalized = String(email || "").trim();
+  const atIndex = normalized.lastIndexOf("@");
+  return atIndex >= 0 ? normalized.slice(atIndex + 1) : "";
+}
+
+function truncateText(value, limit) {
+  const normalized = String(value || "").trim();
+
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(0, limit - 3))}...`;
 }
 
 async function getGoogleAccessToken(env) {
@@ -1275,6 +1590,23 @@ function base64UrlEncodeBytes(bytes) {
 
 function clean(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function escapeHtmlAttribute(value) {
+  return escapeHtml(value);
+}
+
+function normalizeEmailAddress(value) {
+  return clean(value).toLowerCase();
 }
 
 async function parseJson(request) {

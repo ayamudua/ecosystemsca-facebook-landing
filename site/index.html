@@ -14,18 +14,71 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
+    <script src="https://apisystem.tech/js/reviews_widget.js" defer></script>
+    <script>
+      !(function (f, b, e, v, n, t, s) {
+        if (f.fbq) {
+          return;
+        }
+
+        n = f.fbq = function () {
+          n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);
+        };
+
+        if (!f._fbq) {
+          f._fbq = n;
+        }
+
+        n.push = n;
+        n.loaded = true;
+        n.version = "2.0";
+        n.queue = [];
+        t = b.createElement(e);
+        t.async = true;
+        t.src = v;
+        s = b.getElementsByTagName(e)[0];
+        s.parentNode.insertBefore(t, s);
+      })(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
+
+      fbq("init", "1093337934791191");
+      fbq("track", "PageView");
+    </script>
     <link rel="icon" type="image/png" href="./assets/ecosystems-logo-only.png" />
     <link rel="stylesheet" href="./assets/styles.css" />
   </head>
   <body>
+    <noscript>
+      <img
+        height="1"
+        width="1"
+        style="display: none"
+        src="https://www.facebook.com/tr?id=1093337934791191&ev=PageView&noscript=1"
+        alt=""
+      />
+    </noscript>
     <script>
       const isLocalPreview = ["127.0.0.1", "localhost"].includes(window.location.hostname);
       window.ECO_LANDING_CONFIG = {
         apiBaseUrl: isLocalPreview ? "http://127.0.0.1:8787" : "",
+        reviewDisplayMode: "iframe",
+        reviewIframeUrl: "https://backend.leadconnectorhq.com/appengine/reviews/get_widget/aYz5UgOHqy3fIQqucEZN",
+        exitIntentVideoUrl: "https://youtube.com/shorts/8EWt9JzMjmM",
+        exitIntentHeadline: "Before you go, watch this quick message from your neighborhood Flat Roof Experts",
+        exitIntentCopy:
+          "If your flat roof may still be restorable, this short walkthrough explains what ECO Systems looks for before recommending replacement.",
+        googleBusinessName: "ECO Systems",
         googlePlaceId: "ChIJt45P39m6woARDs_3xzLtiRY",
+        googleReviewScore: 5,
+        googleReviewCount: 217,
+        turnstileSiteKey: "0x4AAAAAACvW69UbE6kiMDdI",
         googleReviewsUrl:
-          "https://www.google.com/maps/place/ECO+Systems/@34.0200392,-118.7413853,10z/data=!4m14!1m7!3m6!1s0x80c29ba16145f7cb:0x969231ca58843855!2sECO+Systems!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl!3m5!1s0x80c29ba16145f7cb:0x969231ca58843855!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl?hl=en&entry=ttu&g_ep=EgoyMDI2MDMxOC4xIKXMDSoASAFQAw%3D%3D"
+          "https://www.google.com/maps/place/ECO+Systems/@34.0200392,-118.7413853,10z/data=!3m1!4b1!4m14!1m7!3m6!1s0x80c29ba16145f7cb:0x969231ca58843855!2sECO+Systems!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl!3m5!1s0x80c29ba16145f7cb:0x969231ca58843855!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl?hl=en&entry=ttu&g_ep=EgoyMDI2MDMxOC4xIKXMDSoASAFQAw%3D%3D",
+        googleAlternateReviewsUrl:
+          "https://www.google.com/search?q=ECO+Roof+Solar&ludocid=10849789197427161173&lsig=AB86z5X8fALn0wXQ-wYSbWlQi8GC#lkt=LocalPoiReviews&lpg=cid:CgIgAQ%3D%3D"
       };
+
+      document.documentElement.dataset.reviewMode = window.ECO_LANDING_CONFIG.reviewDisplayMode || "api";
     </script>
 
     <div class="page-shell">
@@ -127,6 +180,11 @@
             </section>
 
             <p class="form-status" id="form-status" role="status" aria-live="polite"></p>
+
+            <div class="turnstile-shell" id="turnstile-shell" hidden>
+              <div class="turnstile-widget" id="turnstile-widget"></div>
+              <p class="turnstile-copy">Protected by Cloudflare</p>
+            </div>
           </form>
 
           <section class="submission-confirmation" id="submission-confirmation" hidden aria-live="polite">
@@ -163,7 +221,7 @@
             <a
               class="social-proof-button"
               id="write-review-link"
-              href="https://www.google.com/maps/place/ECO+Systems/@34.0200392,-118.7413853,10z/data=!4m14!1m7!3m6!1s0x80c29ba16145f7cb:0x969231ca58843855!2sECO+Systems!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl!3m5!1s0x80c29ba16145f7cb:0x969231ca58843855!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl?hl=en&entry=ttu&g_ep=EgoyMDI2MDMxOC4xIKXMDSoASAFQAw%3D%3D"
+              href="https://www.google.com/maps/place/ECO+Systems/@34.0200392,-118.7413853,10z/data=!3m1!4b1!4m14!1m7!3m6!1s0x80c29ba16145f7cb:0x969231ca58843855!2sECO+Systems!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl!3m5!1s0x80c29ba16145f7cb:0x969231ca58843855!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl?hl=en&entry=ttu&g_ep=EgoyMDI2MDMxOC4xIKXMDSoASAFQAw%3D%3D"
               target="_blank"
               rel="noreferrer"
             >
@@ -181,7 +239,7 @@
             <a
               class="button-secondary"
               id="all-reviews-link"
-              href="https://www.google.com/maps/place/ECO+Systems/@34.0200392,-118.7413853,10z/data=!4m14!1m7!3m6!1s0x80c29ba16145f7cb:0x969231ca58843855!2sECO+Systems!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl!3m5!1s0x80c29ba16145f7cb:0x969231ca58843855!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl?hl=en&entry=ttu&g_ep=EgoyMDI2MDMxOC4xIKXMDSoASAFQAw%3D%3D"
+              href="https://www.google.com/search?q=ECO+Roof+Solar&ludocid=10849789197427161173&lsig=AB86z5X8fALn0wXQ-wYSbWlQi8GC#lkt=LocalPoiReviews&lpg=cid:CgIgAQ%3D%3D"
               target="_blank"
               rel="noreferrer"
             >
@@ -190,10 +248,23 @@
           </div>
 
           <div class="reviews-summary" id="reviews-summary">
-            Loading Google review highlights...
+            Customer reviews from ECO Systems are embedded below. Open Google to view the full review profile.
           </div>
 
-          <div class="reviews-grid is-loading" id="reviews-grid" aria-live="polite">
+          <div class="reviews-iframe-shell" id="reviews-iframe-shell">
+            <iframe
+              id="msgsndr_reviews"
+              class="reviews-iframe-frame"
+              title="ECO Systems Google reviews"
+              src="https://backend.leadconnectorhq.com/appengine/reviews/get_widget/aYz5UgOHqy3fIQqucEZN"
+              frameborder="0"
+              scrolling="no"
+              loading="lazy"
+            ></iframe>
+          </div>
+
+          <!-- API-based review wall is intentionally preserved for post-approval reactivation. -->
+          <div class="reviews-grid is-loading" id="reviews-grid" aria-live="polite" hidden>
             <article class="review-card">
               <p>Loading review highlights...</p>
             </article>
@@ -204,8 +275,7 @@
           </div>
 
           <p class="reviews-note">
-            Google only exposes a featured subset of reviews through its Places API. Open Google to
-            browse the full public review profile and leave a review there.
+            Explore recent customer feedback and open Google to see the full review profile.
           </p>
         </section>
 
@@ -219,6 +289,56 @@
           <a href="https://ecosystemsca.com/contact-us/">Contact Us</a>
         </nav>
       </footer>
+    </div>
+
+    <div class="exit-intent-backdrop" id="exit-intent-backdrop" aria-hidden="true">
+      <section
+        class="exit-intent-dialog"
+        id="exit-intent-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="exit-intent-title"
+        aria-describedby="exit-intent-copy"
+      >
+        <button type="button" class="exit-intent-close" id="exit-intent-close" aria-label="Close popup">
+          ×
+        </button>
+        <p class="exit-intent-eyebrow">Still comparing options?</p>
+        <h2 id="exit-intent-title">Before you go, watch this quick message from your neighborhood Flat Roof Experts</h2>
+        <p class="exit-intent-copy" id="exit-intent-copy">
+          If your flat roof may still be restorable, this short walkthrough explains what ECO Systems looks for before recommending replacement.
+        </p>
+        <div class="exit-intent-video-shell">
+          <button type="button" class="exit-intent-video-launch" id="exit-intent-video-launch">
+            <span class="exit-intent-video-icon" aria-hidden="true">▶</span>
+            <span>Play 30-second roof video</span>
+          </button>
+          <iframe
+            id="exit-intent-video"
+            class="exit-intent-video"
+            title="ECO Systems flat roof video"
+            src="about:blank"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+          ></iframe>
+        </div>
+        <div class="exit-intent-actions">
+          <button type="button" class="exit-intent-button exit-intent-button-primary" id="exit-intent-stay">
+            Complete No Fee Intake
+          </button>
+          <button type="button" class="exit-intent-button exit-intent-button-secondary" id="exit-intent-dismiss">
+            No Thanks
+          </button>
+          <a
+            class="exit-intent-button exit-intent-button-secondary"
+            id="exit-intent-leave-link"
+            href="https://ecosystemsca.com"
+            hidden
+          >
+            Leave This Page
+          </a>
+        </div>
+      </section>
     </div>
 
     <script src="./assets/app.js" defer></script>

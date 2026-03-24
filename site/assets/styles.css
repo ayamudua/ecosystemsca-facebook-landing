@@ -25,6 +25,10 @@ body {
   background: var(--paper);
 }
 
+body.is-exit-intent-open {
+  overflow: hidden;
+}
+
 .page-shell {
   width: min(1040px, calc(100% - 32px));
   margin: 0 auto;
@@ -347,6 +351,24 @@ input {
   color: #0f7c25;
 }
 
+.turnstile-shell {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 18px 16px 0;
+}
+
+.turnstile-widget {
+  min-height: 65px;
+}
+
+.turnstile-copy {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #666666;
+}
+
 .submission-confirmation {
   border: 2px solid var(--border);
   border-radius: var(--radius);
@@ -451,6 +473,33 @@ input {
 .reviews-summary {
   font-size: 1.05rem;
   margin-bottom: 18px;
+}
+
+html[data-review-mode="api"] .reviews-iframe-shell {
+  display: none;
+}
+
+html[data-review-mode="iframe"] .reviews-grid,
+html[data-review-mode="iframe"] .reviews-actions {
+  display: none;
+}
+
+.reviews-iframe-shell {
+  margin-bottom: 18px;
+  border: 1px solid #e6e6e6;
+  border-radius: 18px;
+  background: var(--paper);
+  box-shadow: 0 10px 28px rgba(17, 17, 17, 0.08);
+  overflow: hidden;
+}
+
+.reviews-iframe-frame {
+  display: block;
+  min-width: 100%;
+  width: 100%;
+  min-height: 1180px;
+  border: 0;
+  background: var(--paper);
 }
 
 .reviews-grid {
@@ -659,6 +708,175 @@ input {
   flex-wrap: wrap;
 }
 
+.exit-intent-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: 20px;
+  background: rgba(17, 17, 17, 0.7);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 180ms ease, visibility 180ms ease;
+}
+
+.exit-intent-backdrop.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.exit-intent-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(820px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 34px 34px 28px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #fffaf4 0%, #ffffff 100%);
+  color: #20242b;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.28);
+}
+
+.exit-intent-close {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  right: 12px;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(23, 59, 99, 0.08);
+  color: #173b63;
+  font-size: 1.8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.exit-intent-eyebrow {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #173b63;
+}
+
+.exit-intent-dialog h2 {
+  margin: 0;
+  font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  line-height: 0.98;
+  text-transform: uppercase;
+}
+
+.exit-intent-copy {
+  margin: 16px 0 0;
+  max-width: 60ch;
+  font-size: 1.05rem;
+  line-height: 1.65;
+  color: #4d5664;
+}
+
+.exit-intent-video-shell {
+  position: relative;
+  z-index: 1;
+  margin-top: 22px;
+  min-height: 220px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #111111;
+  box-shadow: 0 16px 40px rgba(17, 17, 17, 0.16);
+}
+
+.exit-intent-video-launch {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  background:
+    linear-gradient(180deg, rgba(17, 17, 17, 0.28) 0%, rgba(17, 17, 17, 0.72) 100%),
+    radial-gradient(circle at top, rgba(245, 106, 0, 0.22), transparent 55%);
+  color: var(--paper);
+  font-size: 1rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.exit-intent-video-icon {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 999px;
+  background: rgba(245, 106, 0, 0.95);
+  color: var(--paper);
+  font-size: 2rem;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+}
+
+.exit-intent-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+}
+
+.exit-intent-video[hidden],
+.exit-intent-video-launch[hidden] {
+  display: none;
+}
+
+.exit-intent-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 22px;
+  flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  padding-top: 16px;
+  padding-bottom: 4px;
+  background: linear-gradient(180deg, rgba(255, 250, 244, 0) 0%, rgba(255, 255, 255, 0.94) 24%, #ffffff 100%);
+}
+
+.exit-intent-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 210px;
+  min-height: 56px;
+  padding: 0 24px;
+  border-radius: 999px;
+  font-size: 0.98rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.exit-intent-button-primary {
+  border: 0;
+  background: var(--orange-dark);
+  color: var(--paper);
+  cursor: pointer;
+}
+
+.exit-intent-button-secondary {
+  border: 2px solid #d8dee7;
+  color: #173b63;
+  background: var(--paper);
+  cursor: pointer;
+}
+
 @media (max-width: 980px) {
   .page-shell {
     width: min(100% - 24px, 1040px);
@@ -666,6 +884,10 @@ input {
 
   .reviews-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reviews-iframe-frame {
+    min-height: 1040px;
   }
 }
 
@@ -734,6 +956,17 @@ input {
     grid-template-columns: 1fr;
   }
 
+  .turnstile-shell {
+    justify-items: stretch;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .turnstile-widget {
+    display: flex;
+    justify-content: center;
+  }
+
   .footer-button,
   .button-secondary {
     width: 100%;
@@ -755,6 +988,46 @@ input {
 
   .reviews-grid {
     grid-template-columns: 1fr;
+  }
+
+  .reviews-iframe-frame {
+    min-height: 920px;
+  }
+
+  .exit-intent-backdrop {
+    padding: 12px;
+    align-items: end;
+  }
+
+  .exit-intent-dialog {
+    width: 100%;
+    max-height: calc(100vh - 12px);
+    padding: 26px 18px 20px;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .exit-intent-video-shell {
+    min-height: 188px;
+  }
+
+  .exit-intent-video-icon {
+    width: 72px;
+    height: 72px;
+    font-size: 1.8rem;
+  }
+
+  .exit-intent-copy {
+    font-size: 0.98rem;
+  }
+
+  .exit-intent-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .exit-intent-button {
+    width: 100%;
+    min-width: 0;
   }
 }
 
