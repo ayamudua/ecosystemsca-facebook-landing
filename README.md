@@ -12,6 +12,7 @@ Minimal static landing page plus Cloudflare Worker for a flat-roof Facebook camp
 
 - Landing page patterned on the existing flat-roofs funnel with minimal deviation in flow
 - Three-step form that submits to `POST /api/lead`
+- Post-submit scheduling flow that redirects to a dedicated first-party scheduling page with Cal.com prefill values in the URL
 - Worker endpoint that validates the form, forwards the lead to JobNimbus, logs every attempt to Google Sheets, and sends an owner notification email for each completed submission attempt
 - Worker endpoint that fetches Google review highlights from the Places API and returns a normalized carousel payload
 - D1-backed review archive endpoints that can serve a fuller synced Google Business Profile archive plus owner responses
@@ -62,7 +63,7 @@ Important Cloudflare constraint: Cloudflare Workers does not issue bare URLs lik
 
 Recommendation: use `https://prd.ecolanding.workers.dev` as the production preview/origin Worker URL behind `https://ecosystemsca.net`, and use `https://devmt.ecolanding.workers.dev` as the isolated development endpoint.
 
-Current domain status: the Worker routes are deployed and healthy, and the Pages production deployment is live, but the Pages project has not yet been attached to the custom domain in Cloudflare. Until that is completed, `ecosystemsca.net` does not resolve to the Pages site publicly.
+Current domain status: the Worker routes are deployed and healthy, the Pages production deployment is live, and `ecosystemsca.net` plus `www.ecosystemsca.net` are serving the Pages site publicly.
 
 ## Worker configuration
 
@@ -141,6 +142,31 @@ Current Turnstile placement: the widget is rendered below the full quick-answer 
 2. The configured Pixel ID is `1093337934791191`.
 3. The page tracks the default `PageView` event on load and includes Meta's `noscript` image fallback.
 4. No Worker secret is required because Meta Pixel IDs are public identifiers.
+
+## Cal.com setup
+
+The landing page now supports a fast post-submit Cal.com handoff without changing the Worker lead pipeline.
+
+How it works:
+
+1. The user completes the existing 3-step lead form.
+2. The Worker still receives the lead through `POST /api/lead`.
+3. The frontend redirects the user to a dedicated scheduling page on the same domain.
+4. That scheduling page reads the submitted values from the URL and passes them into the Cal.com booking URL and iframe.
+5. Cal.com is responsible for appointment availability, Google Calendar sync, invite emails, and reminder delivery.
+
+Required setup:
+
+1. Put the actual Cal.com booking link into `window.ECO_LANDING_CONFIG.calComLink` in [site/index.html](site/index.html).
+2. In Cal.com, configure the event to expose only the next 3 days of availability and the allowed time windows.
+3. Connect that Cal.com event to the client's Google Calendar so scheduled appointments land in the Gmail-backed calendar and trigger notifications.
+
+Current repository state:
+
+- The redirect-based scheduling page is implemented at `site/schedule.html`.
+- If `calComLink` is blank or invalid, the scheduling page falls back to a visible notice instead of rendering the booking iframe.
+- Static asset URLs are versioned in the HTML so production browsers refresh the latest deployed JS and CSS after Pages deploys.
+- No Worker changes are required for the quick Cal.com option unless you later want webhook-based appointment logging.
 
 ## Lead email fail-safe
 

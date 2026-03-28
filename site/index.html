@@ -14,6 +14,9 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <script>
+      window.ECO_LANDING_ASSET_VERSION = "20260327b";
+    </script>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
     <script src="https://apisystem.tech/js/reviews_widget.js" defer></script>
     <script>
@@ -45,7 +48,11 @@
       fbq("track", "PageView");
     </script>
     <link rel="icon" type="image/png" href="./assets/ecosystems-logo-only.png" />
-    <link rel="stylesheet" href="./assets/styles.css" />
+    <script>
+      document.write(
+        `<link rel="stylesheet" href="./assets/styles.css?v=${encodeURIComponent(window.ECO_LANDING_ASSET_VERSION)}" />`
+      );
+    </script>
   </head>
   <body>
     <noscript>
@@ -72,6 +79,11 @@
         googleReviewScore: 5,
         googleReviewCount: 217,
         turnstileSiteKey: "0x4AAAAAACvW69UbE6kiMDdI",
+        calComLink: "https://cal.com/eco-systems-roofing-la-county/at-home-roof-estimate-and-inspection",
+        calComNamespace: "at-home-roof-estimate-and-inspection",
+        calComHeadline: "Step 2: Pick your inspection time",
+        calComCopy:
+          "Choose your appointment now so ECO Systems can lock in your onsite flat-roof inspection while availability is open.",
         googleReviewsUrl:
           "https://www.google.com/maps/place/ECO+Systems/@34.0200392,-118.7413853,10z/data=!3m1!4b1!4m14!1m7!3m6!1s0x80c29ba16145f7cb:0x969231ca58843855!2sECO+Systems!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl!3m5!1s0x80c29ba16145f7cb:0x969231ca58843855!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl?hl=en&entry=ttu&g_ep=EgoyMDI2MDMxOC4xIKXMDSoASAFQAw%3D%3D",
         googleAlternateReviewsUrl:
@@ -194,6 +206,19 @@
               ECO Systems will review your request and follow up shortly.
             </p>
             <div class="submission-confirmation-details" id="submission-confirmation-details"></div>
+            <section class="scheduler-shell" id="scheduler-shell" hidden aria-labelledby="scheduler-title">
+              <h4 class="sr-only" id="scheduler-title">Schedule your onsite inspection</h4>
+              <p class="scheduler-status" id="scheduler-status" role="status" aria-live="polite"></p>
+              <button type="button" class="scheduler-launch-button" id="scheduler-launch-button" hidden>
+                Reopen scheduler
+              </button>
+              <div class="scheduler-fallback" id="scheduler-fallback" hidden>
+                <p class="scheduler-fallback-copy" id="scheduler-fallback-copy">
+                  Appointment scheduling will appear here once the Cal.com booking link is configured.
+                </p>
+              </div>
+              <div class="scheduler-embed" id="scheduler-embed" hidden></div>
+            </section>
             <button type="button" class="submission-confirmation-button" id="new-request-button">
               Submit another request
             </button>
@@ -340,7 +365,10 @@
         </div>
       </section>
     </div>
-
-    <script src="./assets/app.js" defer></script>
+    <script>
+      document.write(
+        `<script src="./assets/app.js?v=${encodeURIComponent(window.ECO_LANDING_ASSET_VERSION)}" defer><\/script>`
+      );
+    </script>
   </body>
 </html>

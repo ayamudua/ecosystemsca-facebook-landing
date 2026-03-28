@@ -19,6 +19,19 @@ const GOOGLE_ALTERNATE_REVIEWS_URL =
   CONFIG.googleAlternateReviewsUrl ||
   "https://www.google.com/search?q=ECO+Roof+Solar&ludocid=10849789197427161173&lsig=AB86z5X8fALn0wXQ-wYSbWlQi8GC#lkt=LocalPoiReviews&lpg=cid:CgIgAQ%3D%3D";
 const GOOGLE_WRITE_REVIEW_URL = GOOGLE_REVIEWS_URL;
+const CAL_COM_RAW_LINK = String(CONFIG.calComLink || "").trim();
+const CAL_COM_EMBED = normalizeCalComLink(CAL_COM_RAW_LINK);
+const CAL_COM_LINK = CAL_COM_EMBED.calLink;
+const CAL_COM_EXTERNAL_URL = CAL_COM_EMBED.externalUrl;
+const CAL_COM_NAMESPACE =
+  String(CONFIG.calComNamespace || CAL_COM_LINK.split("/").pop() || "").trim() || "at-home-roof-estimate-and-inspection";
+const CAL_COM_ORIGIN = "https://app.cal.com";
+const CAL_COM_ENABLED = Boolean(CAL_COM_EXTERNAL_URL);
+const CAL_COM_HEADLINE = CONFIG.calComHeadline || "Step 2: Pick your inspection time";
+const CAL_COM_COPY =
+  CONFIG.calComCopy ||
+  "Choose your appointment now so ECO Systems can reserve your onsite flat-roof inspection while availability is open.";
+const CALENDAR_PAGE_URL = new URL("./schedule.html", window.location.href);
 const TURNSTILE_SITE_KEY = CONFIG.turnstileSiteKey || "";
 const TURNSTILE_ENABLED = Boolean(TURNSTILE_SITE_KEY);
 
@@ -29,8 +42,16 @@ const submitButton = document.querySelector("#submit-button");
 const turnstileShell = document.querySelector("#turnstile-shell");
 const turnstileWidgetNode = document.querySelector("#turnstile-widget");
 const confirmationPanel = document.querySelector("#submission-confirmation");
+const confirmationEyebrow = document.querySelector(".submission-confirmation-eyebrow");
+const confirmationTitle = confirmationPanel?.querySelector("h3") || null;
 const confirmationCopy = document.querySelector("#submission-confirmation-copy");
 const confirmationDetails = document.querySelector("#submission-confirmation-details");
+const schedulerShell = document.querySelector("#scheduler-shell");
+const schedulerStatus = document.querySelector("#scheduler-status");
+const schedulerLaunchButton = document.querySelector("#scheduler-launch-button");
+const schedulerFallback = document.querySelector("#scheduler-fallback");
+const schedulerFallbackCopy = document.querySelector("#scheduler-fallback-copy");
+const schedulerEmbed = document.querySelector("#scheduler-embed");
 const newRequestButton = document.querySelector("#new-request-button");
 const exitIntentBackdrop = document.querySelector("#exit-intent-backdrop");
 const exitIntentDialog = document.querySelector("#exit-intent-dialog");
@@ -74,6 +95,10 @@ let confirmationResetTimer = 0;
 let turnstileWidgetId = null;
 let turnstileToken = "";
 let turnstileInitialized = false;
+let calComInitToken = 0;
+let calComEventBindingsRegistered = false;
+let lastSubmittedLeadPayload = null;
+let calComReady = false;
 
 if (allReviewsLink) {
   allReviewsLink.href = GOOGLE_ALTERNATE_REVIEWS_URL;
@@ -253,8 +278,7 @@ async function submitLead(event) {
     );
     hasSubmittedSuccessfully = true;
     closeExitIntent();
-    showSubmissionConfirmation(payloadBody, payload.message);
-    form.reset();
+    redirectToSchedulerPage(payloadBody);
   } catch (error) {
     setStatus(
       `${error.message} If you need a faster answer, call or text 310-340-7777.`,
@@ -267,6 +291,29 @@ async function submitLead(event) {
   }
 }
 
+function redirectToSchedulerPage(payload) {
+  const destination = buildSchedulerPageUrl(payload);
+  setStatus("Redirecting you to the scheduling page...", "success");
+  window.location.assign(destination);
+}
+
+function buildSchedulerPageUrl(payload) {
+  const url = new URL(CALENDAR_PAGE_URL.toString());
+  const prefill = buildCalComPrefillValues(payload);
+
+  Object.entries(prefill).forEach(([key, value]) => {
+    if (!value) {
+      return;
+    }
+
+    url.searchParams.set(key, value);
+  });
+
+  url.searchParams.set("submitted", "1");
+
+  return url.toString();
+}
+
 function showSubmissionConfirmation(payload, message) {
   if (!confirmationPanel || !confirmationCopy || !confirmationDetails) {
     showStep(0);
@@ -274,30 +321,31 @@ function showSubmissionConfirmation(payload, message) {
   }
 
   clearConfirmationResetTimer();
+  lastSubmittedLeadPayload = payload;
 
   form.hidden = true;
   confirmationPanel.hidden = false;
-  confirmationCopy.textContent =
-    message || "ECO Systems has your request and will follow up after reviewing the property details you submitted.";
-  confirmationDetails.innerHTML = `
-    <p><strong>Name:</strong> ${escapeHtml(payload.contact.fullName || payload.contact.firstName || "")}</p>
-    <p><strong>Mobile:</strong> ${escapeHtml(formatPhoneForDisplay(payload.contact.phone) || payload.contact.phone || "")}</p>
-    <p><strong>Email:</strong> ${escapeHtml(payload.contact.email || "")}</p>
-    <p><strong>Property:</strong> ${escapeHtml(formatAddressForDisplay(payload.property))}</p>
-  `;
+  showSchedulingStep(message);
 
-  confirmationResetTimer = window.setTimeout(() => {
-    resetLeadForm();
-    setStatus("");
-  }, SUBMISSION_CONFIRMATION_RESET_MS);
+  prepareSchedulerState(payload);
+
+  if (!CAL_COM_ENABLED) {
+    confirmationResetTimer = window.setTimeout(() => {
+      resetLeadForm();
+      setStatus("");
+    }, SUBMISSION_CONFIRMATION_RESET_MS);
+  }
 }
 
 function resetLeadForm() {
   clearConfirmationResetTimer();
   form.reset();
   hasSubmittedSuccessfully = false;
+  lastSubmittedLeadPayload = null;
   confirmationPanel.hidden = true;
+  confirmationDetails.hidden = true;
   confirmationDetails.innerHTML = "";
+  resetSchedulerState();
   form.hidden = false;
   if (TURNSTILE_ENABLED && turnstileShell) {
     turnstileShell.hidden = false;
@@ -313,6 +361,469 @@ function clearConfirmationResetTimer() {
 
   window.clearTimeout(confirmationResetTimer);
   confirmationResetTimer = 0;
+}
+
+function showSchedulingStep(message) {
+  if (confirmationEyebrow) {
+    confirmationEyebrow.textContent = "Step 2";
+  }
+
+  if (confirmationTitle) {
+    confirmationTitle.textContent = CAL_COM_HEADLINE;
+  }
+
+  confirmationCopy.textContent = CAL_COM_COPY;
+  confirmationDetails.hidden = true;
+  confirmationDetails.innerHTML = "";
+
+  if (newRequestButton) {
+    newRequestButton.hidden = true;
+  }
+}
+
+function showBookedConfirmation(payload, booking) {
+  const bookedPayload = payload || lastSubmittedLeadPayload;
+  const formattedStartTime = booking?.startTime ? new Date(booking.startTime).toLocaleString() : "";
+
+  if (confirmationEyebrow) {
+    confirmationEyebrow.textContent = "Appointment booked";
+  }
+
+  if (confirmationTitle) {
+    confirmationTitle.textContent = "Your inspection appointment is scheduled.";
+  }
+
+  confirmationCopy.textContent = formattedStartTime
+    ? `Your inspection is booked for ${formattedStartTime}. Check your email for the calendar invite and reminders.`
+    : "Your inspection appointment has been scheduled. Check your email for the calendar invite and reminders.";
+
+  if (bookedPayload) {
+    confirmationDetails.innerHTML = `
+      ${formattedStartTime ? `<p><strong>Appointment:</strong> ${escapeHtml(formattedStartTime)}</p>` : ""}
+      <p><strong>Name:</strong> ${escapeHtml(bookedPayload.contact.fullName || bookedPayload.contact.firstName || "")}</p>
+      <p><strong>Mobile:</strong> ${escapeHtml(formatPhoneForDisplay(bookedPayload.contact.phone) || bookedPayload.contact.phone || "")}</p>
+      <p><strong>Email:</strong> ${escapeHtml(bookedPayload.contact.email || "")}</p>
+      <p><strong>Property:</strong> ${escapeHtml(formatAddressForDisplay(bookedPayload.property))}</p>
+    `;
+    confirmationDetails.hidden = false;
+  }
+
+  if (schedulerShell) {
+    schedulerShell.hidden = true;
+  }
+
+  if (newRequestButton) {
+    newRequestButton.hidden = false;
+    newRequestButton.textContent = "Submit another request";
+  }
+}
+
+function prepareSchedulerState(payload) {
+  if (!schedulerShell) {
+    return;
+  }
+
+  schedulerShell.hidden = false;
+  setSchedulerStatus("Preparing scheduler...");
+
+  if (schedulerLaunchButton) {
+    schedulerLaunchButton.hidden = false;
+  }
+
+  if (schedulerEmbed) {
+    schedulerEmbed.hidden = true;
+    schedulerEmbed.innerHTML = "";
+  }
+
+  if (!CAL_COM_ENABLED) {
+    renderSchedulerFallback("Appointment scheduling will appear here once the Cal.com booking link is configured.", true);
+    return;
+  }
+
+  renderSchedulerFallback("", false);
+  openCalComModal(payload);
+}
+
+function openCalComModal(payload) {
+  bootstrapCalComApi();
+  calComReady = false;
+  lastSubmittedLeadPayload = payload || lastSubmittedLeadPayload;
+  setSchedulerStatus("Opening scheduler...");
+
+  const initToken = ++calComInitToken;
+
+  attemptCalComModalOpen(initToken);
+}
+
+function attemptCalComModalOpen(initToken, attempt = 0) {
+  if (typeof window.Cal !== "function") {
+    if (attempt < 40) {
+      window.setTimeout(() => {
+        if (initToken !== calComInitToken) {
+          return;
+        }
+
+        attemptCalComModalOpen(initToken, attempt + 1);
+      }, 250);
+      return;
+    }
+
+    renderSchedulerFallback("The scheduler could not open automatically. Use the button above to try again.", true);
+    setSchedulerStatus("Scheduler failed to open. Tap Reopen scheduler to try again.", "error");
+    return;
+  }
+
+  initializeCalComApi();
+  registerCalComEventBindings();
+  const calLink = buildPrefilledCalComLink(lastSubmittedLeadPayload || {});
+  window.Cal("preload", {
+    calLink
+  });
+  window.Cal("modal", {
+    calLink,
+    config: {
+      ...buildCalComConfig(lastSubmittedLeadPayload || {}),
+      layout: "month_view",
+      useSlotsViewOnSmallScreen: true,
+      theme: "light"
+    }
+  });
+  window.Cal("ui", {
+    theme: "light",
+    hideEventTypeDetails: false,
+    layout: "month_view"
+  });
+
+  setSchedulerStatus("Scheduler opened. Complete your booking to continue.");
+}
+
+function renderCalComEmbed(payload, attempt = 0, initToken = ++calComInitToken) {
+  if (!schedulerEmbed) {
+    return;
+  }
+
+  bootstrapCalComApi();
+  calComReady = false;
+
+  schedulerEmbed.hidden = false;
+  schedulerEmbed.innerHTML = "";
+  setSchedulerStatus("Loading appointment availability...");
+
+  if (typeof window.Cal !== "function") {
+    if (attempt < 40) {
+      window.setTimeout(() => {
+        if (initToken !== calComInitToken) {
+          return;
+        }
+
+        renderCalComEmbed(payload, attempt + 1, initToken);
+      }, 250);
+      return;
+    }
+
+    schedulerEmbed.hidden = true;
+    renderSchedulerFallback("The embedded scheduler could not load. Please refresh the page and try again.", true);
+    setSchedulerStatus("Scheduler failed to load inline. Please refresh the page and try again.", "error");
+    return;
+  }
+
+  initializeCalComApi();
+  registerCalComEventBindings();
+  window.Cal("inline", {
+    elementOrSelector: schedulerEmbed,
+    calLink: CAL_COM_LINK,
+    config: {
+      ...buildCalComConfig(payload),
+      layout: "month_view",
+      useSlotsViewOnSmallScreen: true,
+      theme: "light"
+    }
+  });
+  window.Cal("ui", {
+    theme: "light",
+    hideEventTypeDetails: false,
+    layout: "month_view"
+  });
+
+  window.setTimeout(() => {
+    if (initToken !== calComInitToken || calComReady) {
+      return;
+    }
+
+    renderDirectCalComIframe(payload);
+  }, 5000);
+
+  setSchedulerStatus("Choose a date and time below to complete your booking.");
+}
+
+function renderDirectCalComIframe(payload) {
+  if (!schedulerEmbed) {
+    return;
+  }
+
+  const iframeUrl = buildDirectCalComIframeUrl(payload);
+  schedulerEmbed.hidden = false;
+  schedulerEmbed.innerHTML = `
+    <iframe
+      src="${escapeHtmlAttribute(iframeUrl)}"
+      title="Schedule your ECO Systems inspection"
+      loading="lazy"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allow="clipboard-write"
+    ></iframe>
+  `;
+
+  renderSchedulerFallback("", false);
+  setSchedulerStatus("Choose a date and time below to complete your booking.");
+}
+
+function buildDirectCalComIframeUrl(payload) {
+  const url = new URL(CAL_COM_EXTERNAL_URL);
+  url.searchParams.set("embed", "1");
+
+  applyCalComPrefillParams(url.searchParams, payload);
+
+  return url.toString();
+}
+
+function buildPrefilledCalComLink(payload) {
+  const url = new URL(CAL_COM_EXTERNAL_URL);
+
+  applyCalComPrefillParams(url.searchParams, payload);
+
+  return `${url.pathname.replace(/^\/+/, "")}${url.search}`;
+}
+
+function applyCalComPrefillParams(searchParams, payload) {
+  const prefill = buildCalComPrefillValues(payload);
+
+  Object.entries(prefill).forEach(([key, value]) => {
+    if (!value) {
+      return;
+    }
+
+    searchParams.set(key, value);
+  });
+}
+
+function buildCalComPrefillValues(payload) {
+  const contact = payload?.contact || {};
+  const property = payload?.property || {};
+  const fullName = contact.fullName || contact.firstName || "";
+  const parsedName = splitFullName(fullName);
+  const email = contact.email || "";
+  const phone = contact.phone ? `+1${contact.phone}` : "";
+  const rawPhone = contact.phone || "";
+  const address = formatAddressForDisplay(property);
+  const addressNotes = buildCalComAddressNotes(address);
+
+  return {
+    name: fullName,
+    firstName: parsedName.firstName || contact.firstName || "",
+    lastName: parsedName.lastName || contact.lastName || "",
+    email,
+    attendeePhoneNumber: phone,
+    attendeePhoneNUmber: phone,
+    phone,
+    phoneNumber: phone,
+    mobile: phone,
+    "phone-number": phone,
+    "your-phone-number": phone,
+    defaultPhoneCountry: rawPhone ? "us" : "",
+    calTz: "America/Chicago",
+    cal_tz: "America/Chicago",
+    address,
+    attendeeAddress: address,
+    location: address ? "attendeeInPerson" : "",
+    locationType: address ? "attendeeInPerson" : "",
+    locationAddress: address,
+    notes: addressNotes,
+    YourAddress: address,
+    "your-address": address,
+    "organizer-address": address,
+    "appointment-address": address,
+    "property-address": address,
+    "metadata[propertyAddress]": address,
+    "metadata[phone]": phone
+  };
+}
+
+function buildCalComConfig(payload) {
+  const contact = payload.contact || {};
+  const property = payload.property || {};
+  const tracking = payload.tracking || {};
+  const meta = payload.meta || {};
+  const normalizedPhone = contact.phone ? `+1${contact.phone}` : "";
+  const rawPhone = contact.phone || "";
+  const propertyAddress = formatAddressForDisplay(property);
+  const parsedName = splitFullName(contact.fullName || "");
+  const addressNotes = buildCalComAddressNotes(propertyAddress);
+
+  return {
+    name: contact.fullName || contact.firstName || "",
+    firstName: parsedName.firstName || contact.firstName || "",
+    lastName: parsedName.lastName || contact.lastName || "",
+    email: contact.email || "",
+    attendeePhoneNumber: normalizedPhone,
+    attendeePhoneNUmber: normalizedPhone,
+    phone: normalizedPhone,
+    phoneNumber: normalizedPhone,
+    mobile: normalizedPhone,
+    "phone-number": normalizedPhone,
+    "your-phone-number": normalizedPhone,
+    defaultPhoneCountry: rawPhone ? "us" : "",
+    address: propertyAddress,
+    attendeeAddress: propertyAddress,
+    notes: addressNotes,
+    YourAddress: propertyAddress,
+    "your-address": propertyAddress,
+    "organizer-address": propertyAddress,
+    "appointment-address": propertyAddress,
+    "property-address": propertyAddress,
+    "metadata[source]": meta.source || "facebook-flat-roof-landing",
+    "metadata[propertyAddress]": propertyAddress,
+    "metadata[phone]": normalizedPhone,
+    "metadata[utmSource]": tracking.utmSource || "facebook",
+    "metadata[utmMedium]": tracking.utmMedium || "paid-social",
+    "metadata[utmCampaign]": tracking.utmCampaign || "",
+    "metadata[utmContent]": tracking.utmContent || ""
+  };
+}
+
+function buildCalComAddressNotes(address) {
+  if (!address) {
+    return "";
+  }
+
+  return `Property address: ${address}`;
+}
+
+function renderSchedulerFallback(message, visible) {
+  if (!schedulerFallback || !schedulerFallbackCopy) {
+    return;
+  }
+
+  schedulerFallback.hidden = !visible;
+  schedulerFallbackCopy.textContent = message || "";
+}
+
+function setSchedulerStatus(message, tone = "") {
+  if (!schedulerStatus) {
+    return;
+  }
+
+  schedulerStatus.textContent = message;
+  schedulerStatus.className = "scheduler-status";
+  if (tone) {
+    schedulerStatus.classList.add(`is-${tone}`);
+  }
+}
+
+function resetSchedulerState() {
+  calComInitToken += 1;
+
+  if (schedulerShell) {
+    schedulerShell.hidden = true;
+  }
+
+  if (schedulerEmbed) {
+    schedulerEmbed.hidden = true;
+    schedulerEmbed.innerHTML = "";
+  }
+
+  if (schedulerLaunchButton) {
+    schedulerLaunchButton.hidden = true;
+  }
+
+  renderSchedulerFallback("", false);
+  setSchedulerStatus("");
+}
+
+function initializeCalComApi() {
+  bootstrapCalComApi();
+
+  window.Cal("init", { origin: CAL_COM_ORIGIN });
+}
+
+function getCalComApi() {
+  return window.Cal;
+}
+
+function bootstrapCalComApi() {
+  if (typeof window.Cal === "function") {
+    return;
+  }
+
+  (function bootstrapCal(C, A, L) {
+    const push = function (target, args) {
+      target.q.push(args);
+    };
+    const doc = C.document;
+    C.Cal = C.Cal || function () {
+      const cal = C.Cal;
+      const args = arguments;
+
+      if (!cal.loaded) {
+        cal.ns = {};
+        cal.q = cal.q || [];
+        doc.head.appendChild(doc.createElement("script")).src = A;
+        cal.loaded = true;
+      }
+
+      if (args[0] === L) {
+        const api = function () {
+          push(api, arguments);
+        };
+        const namespace = args[1];
+        api.q = api.q || [];
+
+        if (typeof namespace === "string") {
+          cal.ns[namespace] = cal.ns[namespace] || api;
+          push(cal.ns[namespace], args);
+          push(cal, ["initNamespace", namespace]);
+        } else {
+          push(cal, args);
+        }
+
+        return;
+      }
+
+      push(cal, args);
+    };
+  })(window, "https://cal.com/embed.js", "init");
+}
+
+function registerCalComEventBindings() {
+  if (calComEventBindingsRegistered || typeof window.Cal !== "function") {
+    return;
+  }
+
+  window.Cal("on", {
+    action: "bookerReady",
+    callback() {
+      calComReady = true;
+      setSchedulerStatus("Choose a date and time below to complete your booking.");
+    }
+  });
+
+  window.Cal("on", {
+    action: "bookingSuccessfulV2",
+    callback(event) {
+      calComReady = true;
+      const booking = event?.detail?.data || {};
+      showBookedConfirmation(lastSubmittedLeadPayload, booking);
+    }
+  });
+
+  window.Cal("on", {
+    action: "linkFailed",
+    callback() {
+      renderDirectCalComIframe(lastSubmittedLeadPayload);
+      setSchedulerStatus("Scheduler switched to the inline booking view.");
+    }
+  });
+
+  calComEventBindingsRegistered = true;
 }
 
 function isFormStarted() {
@@ -789,6 +1300,13 @@ exitIntentVideoLaunch?.addEventListener("click", () => {
 
 form.addEventListener("submit", submitLead);
 newRequestButton?.addEventListener("click", resetLeadForm);
+schedulerLaunchButton?.addEventListener("click", () => {
+  if (!lastSubmittedLeadPayload) {
+    return;
+  }
+
+  openCalComModal(lastSubmittedLeadPayload);
+});
 showStep(0);
 initializeTurnstile();
 loadReviews();
@@ -875,6 +1393,44 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function escapeHtmlAttribute(value) {
+  return escapeHtml(value);
+}
+
+function normalizeCalComLink(value) {
+  const trimmedValue = String(value || "").trim();
+  if (!trimmedValue) {
+    return { calLink: "", externalUrl: "" };
+  }
+
+  try {
+    const parsedUrl = new URL(trimmedValue);
+    if (!parsedUrl.hostname.includes("cal.com")) {
+      return { calLink: "", externalUrl: "" };
+    }
+
+    const path = parsedUrl.pathname.replace(/^\/+|\/+$/g, "");
+    if (!path) {
+      return { calLink: "", externalUrl: "" };
+    }
+
+    return {
+      calLink: path,
+      externalUrl: parsedUrl.toString()
+    };
+  } catch {
+    const normalizedPath = trimmedValue.replace(/^https?:\/\/[^/]+\//i, "").replace(/^\/+|\/+$/g, "");
+    if (!normalizedPath) {
+      return { calLink: "", externalUrl: "" };
+    }
+
+    return {
+      calLink: normalizedPath,
+      externalUrl: `https://cal.com/${normalizedPath}`
+    };
+  }
 }
 
 function splitFullName(fullName) {

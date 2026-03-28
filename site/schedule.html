@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Schedule Your ECO Systems Inspection</title>
+    <meta
+      name="description"
+      content="Review your submitted information and choose an inspection time with ECO Systems."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      window.ECO_LANDING_ASSET_VERSION = "20260327b";
+    </script>
+    <link rel="icon" type="image/png" href="./assets/ecosystems-logo-only.png" />
+    <script>
+      document.write(
+        `<link rel="stylesheet" href="./assets/styles.css?v=${encodeURIComponent(window.ECO_LANDING_ASSET_VERSION)}" />`
+      );
+    </script>
+  </head>
+  <body class="schedule-page-body">
+    <script>
+      const isLocalPreview = ["127.0.0.1", "localhost"].includes(window.location.hostname);
+      window.ECO_SCHEDULE_CONFIG = {
+        calComLink: "https://cal.com/eco-systems-roofing-la-county/at-home-roof-estimate-and-inspection",
+        supportPhoneDisplay: "310-340-7777",
+        supportPhoneHref: "tel:3103407777",
+        homePath: isLocalPreview ? "./index.html" : "/"
+      };
+    </script>
+
+    <div class="page-shell schedule-page-shell">
+      <main class="schedule-layout">
+        <section class="schedule-hero">
+          <img class="intro-logo" src="./assets/ecosystems-logo.png" alt="ECO Systems logo" />
+          <p class="schedule-eyebrow">Step 2</p>
+          <h1>Pick your inspection time</h1>
+          <p class="schedule-copy">
+            Your details are already attached to this scheduling page. Choose a time below to finish
+            your booking.
+          </p>
+        </section>
+
+        <section class="schedule-summary-card" aria-labelledby="schedule-summary-title">
+          <div class="schedule-summary-header">
+            <h2 id="schedule-summary-title">Submitted information</h2>
+            <p id="schedule-summary-status" class="schedule-summary-status" role="status" aria-live="polite"></p>
+          </div>
+          <dl class="schedule-summary-grid">
+            <div>
+              <dt>Name</dt>
+              <dd id="schedule-name">Not provided</dd>
+            </div>
+            <div>
+              <dt>Email</dt>
+              <dd id="schedule-email">Not provided</dd>
+            </div>
+            <div>
+              <dt>Phone</dt>
+              <dd id="schedule-phone">Not provided</dd>
+            </div>
+            <div>
+              <dt>Property</dt>
+              <dd id="schedule-address">Not provided</dd>
+            </div>
+          </dl>
+          <p class="schedule-summary-note">
+            If any field is missing, go back and resubmit the form before booking.
+          </p>
+        </section>
+
+        <section class="schedule-frame-card" aria-labelledby="schedule-frame-title">
+          <div class="schedule-frame-header">
+            <h2 id="schedule-frame-title">Available appointments</h2>
+            <a id="schedule-direct-link" class="schedule-direct-link" href="#" rel="noopener noreferrer" target="_blank">
+              Open full scheduling page
+            </a>
+          </div>
+          <p id="schedule-frame-status" class="schedule-frame-status" role="status" aria-live="polite"></p>
+          <div id="schedule-frame-shell" class="schedule-frame-shell" hidden>
+            <iframe
+              id="schedule-frame"
+              title="Schedule your ECO Systems inspection"
+              loading="lazy"
+              referrerpolicy="strict-origin-when-cross-origin"
+              allow="clipboard-write"
+            ></iframe>
+          </div>
+          <div id="schedule-frame-fallback" class="schedule-frame-fallback" hidden>
+            <p id="schedule-frame-fallback-copy"></p>
+            <div class="schedule-frame-actions">
+              <a id="schedule-home-link" class="schedule-home-link" href="./index.html">Return to the form</a>
+              <a id="schedule-phone-link" class="schedule-phone-link" href="tel:3103407777">Call or text ECO Systems</a>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script>
+      document.write(
+        `<script src="./assets/schedule.js?v=${encodeURIComponent(window.ECO_LANDING_ASSET_VERSION)}" defer><\/script>`
+      );
+    </script>
+  </body>
+</html>
