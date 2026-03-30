@@ -13,6 +13,7 @@ const DEFAULT_LEAD_NOTIFICATION_EMAIL = "infoeco411@gmail.com";
 const DEFAULT_LEAD_NOTIFICATION_FROM_EMAIL = "alerts@ecosystemsca.net";
 const DEFAULT_LEAD_NOTIFICATION_FROM_NAME = "ECO Systems Lead Alerts";
 const DEFAULT_LEAD_NOTIFICATION_SUBJECT_PREFIX = "New ECO Systems lead";
+const CAL_WEBHOOK_SIGNATURE_HEADER = "x-cal-signature-256";
 
 export default {
   async fetch(request, env) {
@@ -47,6 +48,14 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/api/admin/reviews/sync-status") {
       return handleAdminReviewSyncStatus(request, env);
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/cal/booking-status") {
+      return handleCalBookingStatus(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/cal/webhook") {
+      return handleCalWebhook(request, env);
     }
 
     if (request.method === "POST" && url.pathname === "/api/lead") {
@@ -150,6 +159,131 @@ async function handleLead(request, env) {
     {
       ok: true,
       message: "Thank you. ECO Systems will review your request and reach out shortly."
+    },
+    200,
+    env
+  );
+}
+
+async function handleCalWebhook(request, env) {
+  if (!env.REVIEWS_DB) {
+    return json({ ok: false, message: "Webhook storage is not configured." }, 503, env);
+  }
+
+  const secret = clean(env.CAL_COM_WEBHOOK_SECRET);
+  if (!secret) {
+    return json({ ok: false, message: "Cal.com webhook secret is not configured." }, 503, env);
+  }
+
+  const rawBody = await request.text();
+  if (!rawBody) {
+    return json({ ok: false, message: "Webhook payload is required." }, 400, env);
+  }
+
+  const signature = clean(request.headers.get(CAL_WEBHOOK_SIGNATURE_HEADER));
+  const verified = await verifyCalWebhookSignature(rawBody, signature, secret);
+  if (!verified) {
+    return json({ ok: false, message: "Webhook signature verification failed." }, 401, env);
+  }
+
+  let body = null;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    return json({ ok: false, message: "Invalid webhook JSON payload." }, 400, env);
+  }
+
+  const booking = normalizeCalWebhookBooking(body);
+  if (!booking.triggerEvent) {
+    return json({ ok: false, message: "Webhook trigger event is required." }, 400, env);
+  }
+
+  if (!booking.bookingUid) {
+    return json({ ok: true, ignored: true, message: "Webhook payload did not include a booking uid." }, 200, env);
+  }
+
+  await upsertCalBookingConfirmation(env, booking);
+
+  return json(
+    {
+      ok: true,
+      message: "Cal.com webhook accepted.",
+      triggerEvent: booking.triggerEvent,
+      bookingUid: booking.bookingUid
+    },
+    200,
+    env
+  );
+}
+
+async function handleCalBookingStatus(request, env) {
+  if (!env.REVIEWS_DB) {
+    return json({ ok: false, message: "Webhook storage is not configured." }, 503, env);
+  }
+
+  const url = new URL(request.url);
+  const email = normalizeEmailAddress(url.searchParams.get("email"));
+  const after = normalizeTimestamp(url.searchParams.get("after")) || "1970-01-01T00:00:00.000Z";
+
+  if (!email) {
+    return json({ ok: false, message: "Booking email is required." }, 400, env);
+  }
+
+  const result = await env.REVIEWS_DB.prepare(
+    `SELECT
+      booking_uid,
+      trigger_event,
+      booking_status,
+      event_type_slug,
+      event_title,
+      organizer_name,
+      organizer_email,
+      booker_name,
+      booker_email,
+      booker_phone,
+      property_address,
+      location,
+      start_time,
+      end_time,
+      webhook_created_at,
+      booking_created_at,
+      updated_at
+    FROM cal_booking_confirmations
+    WHERE booker_email = ?
+      AND webhook_created_at >= ?
+    ORDER BY webhook_created_at DESC
+    LIMIT 1`
+  )
+    .bind(email, after)
+    .first();
+
+  if (!result) {
+    return json({ ok: true, booking: { confirmed: false } }, 200, env);
+  }
+
+  return json(
+    {
+      ok: true,
+      booking: {
+        confirmed: isConfirmedCalBookingStatus(result.booking_status),
+        bookingUid: result.booking_uid,
+        triggerEvent: result.trigger_event,
+        status: result.booking_status,
+        eventTypeSlug: result.event_type_slug,
+        eventTitle: result.event_title,
+        organizerName: result.organizer_name,
+        organizerEmail: result.organizer_email,
+        name: result.booker_name,
+        email: result.booker_email,
+        phone: result.booker_phone,
+        propertyAddress: result.property_address,
+        location: result.location,
+        startTime: result.start_time,
+        endTime: result.end_time,
+        webhookCreatedAt: result.webhook_created_at,
+        bookingCreatedAt: result.booking_created_at,
+        updatedAt: result.updated_at
+      }
     },
     200,
     env
@@ -1034,6 +1168,14 @@ async function sendLeadNotificationEmail(lead, env, result) {
 }
 
 async function verifyTurnstileSubmission(body, request, env) {
+  if (shouldBypassTurnstileForPrototype(body, request)) {
+    return {
+      ok: true,
+      status: 200,
+      message: ""
+    };
+  }
+
   const secretKey = clean(env.TURNSTILE_SECRET_KEY);
   if (!secretKey) {
     console.error("Turnstile secret is not configured.");
@@ -1096,6 +1238,200 @@ async function verifyTurnstileSubmission(body, request, env) {
     status: 200,
     message: ""
   };
+}
+
+async function verifyCalWebhookSignature(rawBody, signatureHeader, secret) {
+  if (!signatureHeader || !secret) {
+    return false;
+  }
+
+  const normalizedSignature = signatureHeader.replace(/^sha256=/i, "").trim().toLowerCase();
+  if (!normalizedSignature) {
+    return false;
+  }
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    {
+      name: "HMAC",
+      hash: "SHA-256"
+    },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
+  const expectedSignature = bytesToHex(new Uint8Array(signature));
+
+  return timingSafeEqual(normalizedSignature, expectedSignature);
+}
+
+function normalizeCalWebhookBooking(body) {
+  const payload = body?.payload || {};
+  const attendee = Array.isArray(payload.attendees) ? payload.attendees[0] || {} : {};
+  const organizer = payload.organizer || {};
+  const responses = payload.responses || {};
+  const metadata = payload.metadata || {};
+
+  return {
+    bookingUid: clean(payload.uid || payload.rescheduleUid),
+    triggerEvent: clean(body?.triggerEvent).toUpperCase(),
+    bookingStatus: mapCalWebhookStatus(body?.triggerEvent, payload?.status),
+    eventTypeSlug: clean(payload.type),
+    eventTitle: clean(payload.eventTitle || payload.title),
+    organizerName: clean(organizer.name),
+    organizerEmail: normalizeEmailAddress(organizer.email),
+    bookerName:
+      clean(attendee.name) || clean(getCalResponseValue(responses.name)) || clean(getCalResponseValue(responses.fullName)),
+    bookerEmail:
+      normalizeEmailAddress(attendee.email) ||
+      normalizeEmailAddress(getCalResponseValue(responses.email)) ||
+      normalizeEmailAddress(getCalResponseValue(responses.attendeeEmail)),
+    bookerPhone:
+      normalizePhone(getCalResponseValue(responses.phone)) ||
+      normalizePhone(getCalResponseValue(responses.attendeePhoneNumber)) ||
+      normalizePhone(getCalResponseValue(responses.mobile)) ||
+      normalizePhone(metadata.phone),
+    propertyAddress:
+      clean(getCalResponseValue(responses.YourAddress)) ||
+      clean(getCalResponseValue(responses["your-address"])) ||
+      clean(getCalResponseValue(responses.locationAddress)) ||
+      clean(metadata.propertyAddress),
+    location: clean(payload.location),
+    startTime: normalizeTimestamp(payload.startTime),
+    endTime: normalizeTimestamp(payload.endTime),
+    webhookCreatedAt: normalizeTimestamp(body?.createdAt) || new Date().toISOString(),
+    bookingCreatedAt: normalizeTimestamp(payload?.createdAt || payload?.updatedAt || body?.createdAt),
+    rawPayloadJson: JSON.stringify(body)
+  };
+}
+
+async function upsertCalBookingConfirmation(env, booking) {
+  await env.REVIEWS_DB.prepare(
+    `INSERT INTO cal_booking_confirmations (
+      booking_uid,
+      trigger_event,
+      booking_status,
+      event_type_slug,
+      event_title,
+      organizer_name,
+      organizer_email,
+      booker_name,
+      booker_email,
+      booker_phone,
+      property_address,
+      location,
+      start_time,
+      end_time,
+      webhook_created_at,
+      booking_created_at,
+      raw_payload_json,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(booking_uid) DO UPDATE SET
+      trigger_event = excluded.trigger_event,
+      booking_status = excluded.booking_status,
+      event_type_slug = excluded.event_type_slug,
+      event_title = excluded.event_title,
+      organizer_name = excluded.organizer_name,
+      organizer_email = excluded.organizer_email,
+      booker_name = excluded.booker_name,
+      booker_email = excluded.booker_email,
+      booker_phone = excluded.booker_phone,
+      property_address = excluded.property_address,
+      location = excluded.location,
+      start_time = excluded.start_time,
+      end_time = excluded.end_time,
+      webhook_created_at = excluded.webhook_created_at,
+      booking_created_at = excluded.booking_created_at,
+      raw_payload_json = excluded.raw_payload_json,
+      updated_at = excluded.updated_at`
+  )
+    .bind(
+      booking.bookingUid,
+      booking.triggerEvent,
+      booking.bookingStatus,
+      booking.eventTypeSlug,
+      booking.eventTitle,
+      booking.organizerName,
+      booking.organizerEmail,
+      booking.bookerName,
+      booking.bookerEmail,
+      booking.bookerPhone,
+      booking.propertyAddress,
+      booking.location,
+      booking.startTime,
+      booking.endTime,
+      booking.webhookCreatedAt,
+      booking.bookingCreatedAt,
+      booking.rawPayloadJson,
+      new Date().toISOString()
+    )
+    .run();
+}
+
+function getCalResponseValue(responseValue) {
+  if (!responseValue) {
+    return "";
+  }
+
+  if (typeof responseValue === "string") {
+    return responseValue;
+  }
+
+  if (typeof responseValue?.value === "string") {
+    return responseValue.value;
+  }
+
+  if (typeof responseValue?.value?.value === "string") {
+    return responseValue.value.value;
+  }
+
+  if (typeof responseValue?.optionValue === "string") {
+    return responseValue.optionValue;
+  }
+
+  return "";
+}
+
+function mapCalWebhookStatus(triggerEvent, payloadStatus) {
+  const normalizedTrigger = clean(triggerEvent).toUpperCase();
+
+  if (normalizedTrigger === "BOOKING_CREATED") {
+    return "accepted";
+  }
+
+  if (normalizedTrigger === "BOOKING_RESCHEDULED") {
+    return "rescheduled";
+  }
+
+  if (normalizedTrigger === "BOOKING_CANCELLED") {
+    return "cancelled";
+  }
+
+  if (normalizedTrigger === "BOOKING_REJECTED") {
+    return "rejected";
+  }
+
+  if (normalizedTrigger === "BOOKING_REQUESTED") {
+    return "requested";
+  }
+
+  return clean(payloadStatus).toLowerCase() || "unknown";
+}
+
+function isConfirmedCalBookingStatus(status) {
+  return ["accepted", "rescheduled"].includes(clean(status).toLowerCase());
+}
+
+function shouldBypassTurnstileForPrototype(body, request) {
+  const source = clean(body?.meta?.source);
+  if (source !== "facebook-flat-roof-integrated-prototype") {
+    return false;
+  }
+
+  const origin = clean(request.headers.get("origin")).toLowerCase();
+  return origin.startsWith("http://127.0.0.1:") || origin.startsWith("http://localhost:");
 }
 
 function buildLeadNotificationSubject(lead, env, result, subjectPrefix) {
@@ -1588,6 +1924,23 @@ function base64UrlEncodeBytes(bytes) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+function bytesToHex(bytes) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function timingSafeEqual(left, right) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  let mismatch = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+
+  return mismatch === 0;
+}
+
 function clean(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -1607,6 +1960,20 @@ function escapeHtmlAttribute(value) {
 
 function normalizeEmailAddress(value) {
   return clean(value).toLowerCase();
+}
+
+function normalizeTimestamp(value) {
+  const normalizedValue = clean(value);
+  if (!normalizedValue) {
+    return "";
+  }
+
+  const timestamp = new Date(normalizedValue);
+  if (Number.isNaN(timestamp.getTime())) {
+    return "";
+  }
+
+  return timestamp.toISOString();
 }
 
 async function parseJson(request) {

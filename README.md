@@ -84,6 +84,7 @@ Required values:
 - `GOOGLE_SHEETS_PRIVATE_KEY`
 - `GOOGLE_SHEETS_SPREADSHEET_ID`
 - `TURNSTILE_SECRET_KEY`
+- `CAL_COM_WEBHOOK_SECRET`
 
 Recommended lead email values:
 
@@ -166,7 +167,23 @@ Current repository state:
 - The redirect-based scheduling page is implemented at `site/schedule.html`.
 - If `calComLink` is blank or invalid, the scheduling page falls back to a visible notice instead of rendering the booking iframe.
 - Static asset URLs are versioned in the HTML so production browsers refresh the latest deployed JS and CSS after Pages deploys.
-- No Worker changes are required for the quick Cal.com option unless you later want webhook-based appointment logging.
+- The Worker now supports `POST /api/cal/webhook` for signed Cal.com booking webhooks and `GET /api/cal/booking-status` so the prototype can confirm bookings from the server side when the embed callback does not return to the parent page.
+
+Recommended webhook setup:
+
+1. In Cal.com, open `/settings/developer/webhooks`.
+2. Create a webhook subscription for at least `Booking Created`.
+3. Set the subscriber URL to the correct Worker environment endpoint:
+	- development: `https://devmt.ecolanding.workers.dev/api/cal/webhook`
+	- production: `https://ecosystemsca.net/api/cal/webhook`
+4. Set a secret in Cal.com and store the same value in the Worker as `CAL_COM_WEBHOOK_SECRET`.
+5. Apply the D1 migration `worker/migrations/0002_cal_booking_confirmations.sql` before testing the webhook-backed booking-status flow.
+
+Prototype fallback behavior:
+
+- The prototype still listens for Cal.com's frontend `bookingSuccessfulV2` event for immediate success UX.
+- In parallel, the prototype now polls `GET /api/cal/booking-status` using the submitted lead email and submission timestamp.
+- If Cal.com completes the booking but the embed callback never returns to the parent page, the webhook-backed status endpoint can still confirm the booking and continue the follow-up video handoff.
 
 ## Lead email fail-safe
 

@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ECO Systems Appointment Booking</title>
+    <meta
+      name="description"
+      content="Book your ECO Systems estimate in one continuous lead and appointment flow."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      window.ECO_LANDING_ASSET_VERSION = "20260330j";
+    </script>
+    <link rel="icon" type="image/png" href="./assets/ecosystems-logo-only.png" />
+    <script>
+      document.write(
+        `<link rel="stylesheet" href="./assets/styles.css?v=${encodeURIComponent(window.ECO_LANDING_ASSET_VERSION)}" />`
+      );
+      document.write(
+        `<link rel="stylesheet" href="./assets/prototype-booking.css?v=${encodeURIComponent(window.ECO_LANDING_ASSET_VERSION)}" />`
+      );
+    </script>
+  </head>
+  <body class="prototype-page-body">
+    <script>
+      window.ECO_PROTOTYPE_CONFIG = {
+        apiBaseUrl: "https://devmt.ecolanding.workers.dev",
+        calNamespace: "prototype",
+        calComLink: "https://cal.com/eco-systems-roofing-la-county/prototype",
+        calBookingStatusPollIntervalMs: 5000,
+        calBookingStatusPollWindowMs: 1800000,
+        postSubmitVideoUrl: "https://ecoroofsolar.com/wp-content/uploads/2025/06/homepage_hd.mp4",
+        postSubmitPagePath: "./prototype-post-submit-video.html",
+        postSubmitRedirectDelayMs: 2200,
+        supportPhoneDisplay: "310-340-7777",
+        supportPhoneHref: "tel:3103407777",
+        homePath: "./index.html"
+      };
+    </script>
+
+    <div class="page-shell prototype-page-shell">
+      <main class="prototype-layout">
+        <section class="intro-block prototype-hero" aria-label="Booking introduction">
+          <img class="intro-logo" src="./assets/ecosystems-logo.png" alt="ECO Systems logo" />
+          <p class="prototype-kicker">Book Your Estimate</p>
+          <h1>Request your appointment in one step</h1>
+          <p class="owner-line prototype-copy">
+            Share your contact details, confirm the property address, and choose your appointment time without
+            leaving the flow.
+          </p>
+
+          <div class="prototype-callouts" aria-label="Booking highlights">
+            <article class="prototype-callout">
+              <p class="prototype-callout-label">Fast handoff</p>
+              <p>Your request is recorded before the calendar opens.</p>
+            </article>
+            <article class="prototype-callout">
+              <p class="prototype-callout-label">Simple scheduling</p>
+              <p>Pick your appointment inside the same page flow.</p>
+            </article>
+            <article class="prototype-callout">
+              <p class="prototype-callout-label">Next step</p>
+              <p>After booking, you will continue to a short follow-up video.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="form-stage prototype-form-stage" aria-labelledby="prototype-form-title">
+          <div class="prototype-stage-banner">
+            <p class="prototype-stage-banner-title">Before you book</p>
+            <p>
+              Complete the form, click <strong>Next: Pick Appointment</strong>, and then choose your preferred time.
+            </p>
+            <p>
+              Your request is saved before the calendar opens so ECO Systems can follow up even if you stop before
+              booking is finished.
+            </p>
+          </div>
+
+          <h2 class="sr-only" id="prototype-form-title">Integrated booking form</h2>
+
+          <form id="prototype-estimate-form" novalidate>
+            <section class="form-step is-active" data-step="1">
+              <div class="step-content step-choice-content">
+                <h3>Is your property in LA County? <span>*</span></h3>
+                <div class="radio-stack">
+                  <label class="radio-option">
+                    <input type="radio" name="county" value="Yes" />
+                    <span>Yes</span>
+                  </label>
+                  <label class="radio-option">
+                    <input type="radio" name="county" value="No" />
+                    <span>No</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-footer single-action">
+                <button type="button" class="footer-button footer-button-next" data-next>Next →</button>
+              </div>
+            </section>
+
+            <section class="form-step" data-step="2" hidden>
+              <div class="step-content">
+                <label class="field-group field-span-full">
+                  <span>Street Address <span>*</span></span>
+                  <input type="text" name="address" autocomplete="street-address" />
+                </label>
+
+                <div class="field-grid address-grid">
+                  <label class="field-group">
+                    <span>City <span>*</span></span>
+                    <input type="text" name="city" autocomplete="address-level2" />
+                  </label>
+                  <label class="field-group">
+                    <span>State <span>*</span></span>
+                    <input type="text" name="state" value="ca" maxlength="2" autocomplete="address-level1" />
+                  </label>
+                </div>
+
+                <label class="field-group zip-group">
+                  <span>Zip code <span>*</span></span>
+                  <input type="text" name="zip" inputmode="numeric" autocomplete="postal-code" />
+                </label>
+              </div>
+
+              <div class="form-footer dual-action">
+                <button type="button" class="footer-button footer-button-prev" data-back>← Prev</button>
+                <button type="button" class="footer-button footer-button-next" data-next>Next →</button>
+              </div>
+            </section>
+
+            <section class="form-step" data-step="3" hidden>
+              <div class="step-content">
+                <label class="field-group field-span-full">
+                  <span>Name <span>*</span></span>
+                  <input type="text" name="fullName" autocomplete="name" />
+                </label>
+
+                <label class="field-group field-span-full">
+                  <span>Cell Phone <span>*</span></span>
+                  <input type="tel" name="phone" autocomplete="tel" inputmode="tel" />
+                </label>
+
+                <label class="field-group field-span-full">
+                  <span>Email address <span>*</span></span>
+                  <input type="email" name="email" autocomplete="email" />
+                </label>
+
+                <label class="field-group hp-field" aria-hidden="true">
+                  <span>Website</span>
+                  <input type="text" name="website" tabindex="-1" autocomplete="off" />
+                </label>
+              </div>
+
+              <div class="form-footer dual-action">
+                <button type="button" class="footer-button footer-button-prev" data-back>← Prev</button>
+                <button type="button" class="footer-button footer-button-next" id="prototype-launch-booking-button">
+                  Next: Pick Appointment →
+                </button>
+              </div>
+            </section>
+
+            <p class="form-status" id="prototype-form-status" role="status" aria-live="polite"></p>
+          </form>
+
+          <section class="prototype-booking-stage" id="prototype-booking-stage" hidden aria-labelledby="prototype-booking-title">
+            <div class="prototype-booking-header">
+              <div>
+                <p class="prototype-kicker">Step 4</p>
+                <h3 id="prototype-booking-title">Pick your appointment time</h3>
+              </div>
+              <button type="button" class="prototype-link-button" id="prototype-edit-details-button">Edit details</button>
+            </div>
+
+            <div class="prototype-summary-card">
+              <p class="prototype-summary-title">Your request is already on file</p>
+              <dl class="prototype-summary-grid">
+                <div>
+                  <dt>Name</dt>
+                  <dd id="prototype-summary-name">Not provided</dd>
+                </div>
+                <div>
+                  <dt>Email</dt>
+                  <dd id="prototype-summary-email">Not provided</dd>
+                </div>
+                <div>
+                  <dt>Phone</dt>
+                  <dd id="prototype-summary-phone">Not provided</dd>
+                </div>
+                <div>
+                  <dt>Property</dt>
+                  <dd id="prototype-summary-address">Not provided</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div class="prototype-booking-card">
+              <p class="prototype-booking-card-title">Appointment calendar</p>
+              <p class="prototype-booking-copy">
+                Your request has been recorded. Choose a time to finish your appointment booking and continue to the next page.
+              </p>
+              <p class="form-status prototype-booking-status" id="prototype-booking-status" role="status" aria-live="polite"></p>
+              <div class="prototype-calendar-shell" id="prototype-calendar-shell">
+                <div class="prototype-calendar-inline" id="my-cal-inline-prototype"></div>
+              </div>
+              <div class="prototype-booking-fallback" id="prototype-booking-fallback" hidden>
+                <p id="prototype-booking-fallback-copy">
+                  The calendar could not load automatically. Use the direct booking link instead.
+                </p>
+                <a
+                  class="submission-confirmation-button prototype-direct-link"
+                  id="prototype-direct-calendar-link"
+                  href="#"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open booking page
+                </a>
+              </div>
+              <div class="prototype-post-booking-actions">
+                <p class="prototype-post-booking-copy">
+                  If the next page does not open automatically after booking, use the button below.
+                </p>
+                <a
+                  class="submission-confirmation-button prototype-video-link"
+                  id="prototype-booking-video-link"
+                  href="./prototype-post-submit-video.html"
+                >
+                  Open follow-up video
+                </a>
+              </div>
+            </div>
+
+            <div class="prototype-recovery-card" id="prototype-recovery-card" hidden>
+              <p class="prototype-recovery-title">Lead submit needs attention</p>
+              <p id="prototype-recovery-copy">
+                The lead could not be recorded, so the calendar did not open. Retry the submit or call ECO Systems directly.
+              </p>
+              <div class="prototype-recovery-actions">
+                <button type="button" class="submission-confirmation-button" id="prototype-retry-submit-button">Retry lead submit</button>
+                <a class="prototype-phone-link" id="prototype-phone-link" href="tel:3103407777">Call or text ECO Systems</a>
+              </div>
+            </div>
+          </section>
+
+          <section class="submission-confirmation prototype-confirmation" id="prototype-confirmation" hidden aria-live="polite">
+            <p class="submission-confirmation-eyebrow">Booking confirmed</p>
+            <h3>You are all set.</h3>
+            <p class="submission-confirmation-copy" id="prototype-confirmation-copy">
+              Your request was received and your appointment is booked.
+            </p>
+            <div class="submission-confirmation-details" id="prototype-confirmation-details"></div>
+            <p class="prototype-redirect-copy" id="prototype-redirect-copy">
+              Opening your follow-up page now.
+            </p>
+            <div class="prototype-confirmation-actions">
+              <a class="submission-confirmation-button prototype-video-link" id="prototype-video-link" href="./prototype-post-submit-video.html">
+                Open follow-up video now
+              </a>
+              <button type="button" class="submission-confirmation-button" id="prototype-start-over-button">
+                Start over
+              </button>
+              <a class="prototype-link-button prototype-home-link" href="./index.html">Open current production page</a>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      document.write(
+        `<script src="./assets/prototype-booking.js?v=${encodeURIComponent(window.ECO_LANDING_ASSET_VERSION)}" defer><\/script>`
+      );
+    </script>
+  </body>
+</html>
