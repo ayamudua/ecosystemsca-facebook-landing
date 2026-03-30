@@ -32,6 +32,11 @@ const CAL_COM_COPY =
   CONFIG.calComCopy ||
   "Choose your appointment now so ECO Systems can reserve your onsite flat-roof inspection while availability is open.";
 const CALENDAR_PAGE_URL = new URL("./schedule.html", window.location.href);
+const POST_SUBMIT_PAGE_PATH = String(CONFIG.postSubmitPagePath || "./post-booking-video.html").trim();
+const POST_SUBMIT_VIDEO_URL = String(CONFIG.postSubmitVideoUrl || "").trim();
+const POST_SUBMIT_REDIRECT_DELAY_MS = Number(CONFIG.postSubmitRedirectDelayMs || 2200);
+const CAL_BOOKING_STATUS_POLL_INTERVAL_MS = Number(CONFIG.calBookingStatusPollIntervalMs || 5000);
+const CAL_BOOKING_STATUS_POLL_WINDOW_MS = Number(CONFIG.calBookingStatusPollWindowMs || 1800000);
 const TURNSTILE_SITE_KEY = CONFIG.turnstileSiteKey || "";
 const TURNSTILE_ENABLED = Boolean(TURNSTILE_SITE_KEY);
 
@@ -99,6 +104,9 @@ let calComInitToken = 0;
 let calComEventBindingsRegistered = false;
 let lastSubmittedLeadPayload = null;
 let calComReady = false;
+let bookingStatusPollTimer = 0;
+let bookingStatusPollingStartedAt = 0;
+let postSubmitRedirectTimer = 0;
 
 if (allReviewsLink) {
   allReviewsLink.href = GOOGLE_ALTERNATE_REVIEWS_URL;
@@ -256,7 +264,7 @@ async function submitLead(event) {
 
   submitButton.disabled = true;
   submitButton.textContent = "Submitting...";
-  setStatus("Submitting your request...", "");
+  setStatus("Recording your request before opening the calendar...", "");
 
   try {
     const response = await fetch(`${API_BASE}/api/lead`, {
@@ -272,13 +280,9 @@ async function submitLead(event) {
       throw new Error(payload.message || "Unable to send your request right now.");
     }
 
-    setStatus(
-      payload.message || "Thanks. ECO Systems will follow up with your next step shortly.",
-      "success"
-    );
     hasSubmittedSuccessfully = true;
     closeExitIntent();
-    redirectToSchedulerPage(payloadBody);
+    showSubmissionConfirmation(payloadBody, payload.message || "Your request is recorded. Choose your appointment below.");
   } catch (error) {
     setStatus(
       `${error.message} If you need a faster answer, call or text 310-340-7777.`,
@@ -287,7 +291,7 @@ async function submitLead(event) {
   } finally {
     resetTurnstileWidget();
     submitButton.disabled = false;
-    submitButton.textContent = "Get My Estimate";
+    submitButton.textContent = "Next";
   }
 }
 
@@ -325,7 +329,7 @@ function showSubmissionConfirmation(payload, message) {
 
   form.hidden = true;
   confirmationPanel.hidden = false;
-  showSchedulingStep(message);
+  showSchedulingStep(payload, message);
 
   prepareSchedulerState(payload);
 
@@ -339,6 +343,7 @@ function showSubmissionConfirmation(payload, message) {
 
 function resetLeadForm() {
   clearConfirmationResetTimer();
+  clearPostSubmitRedirectTimer();
   form.reset();
   hasSubmittedSuccessfully = false;
   lastSubmittedLeadPayload = null;
@@ -363,27 +368,42 @@ function clearConfirmationResetTimer() {
   confirmationResetTimer = 0;
 }
 
-function showSchedulingStep(message) {
+function showSchedulingStep(payload, message) {
   if (confirmationEyebrow) {
-    confirmationEyebrow.textContent = "Step 2";
+    confirmationEyebrow.textContent = "Step 4";
   }
 
   if (confirmationTitle) {
     confirmationTitle.textContent = CAL_COM_HEADLINE;
   }
 
-  confirmationCopy.textContent = CAL_COM_COPY;
-  confirmationDetails.hidden = true;
-  confirmationDetails.innerHTML = "";
+  confirmationCopy.textContent = message || CAL_COM_COPY;
+  renderSchedulingSummary(payload);
 
   if (newRequestButton) {
     newRequestButton.hidden = true;
   }
 }
 
+function renderSchedulingSummary(payload) {
+  if (!confirmationDetails || !payload) {
+    return;
+  }
+
+  confirmationDetails.innerHTML = `
+    <p><strong>Name:</strong> ${escapeHtml(payload.contact.fullName || payload.contact.firstName || "")}</p>
+    <p><strong>Mobile:</strong> ${escapeHtml(formatPhoneForDisplay(payload.contact.phone) || payload.contact.phone || "")}</p>
+    <p><strong>Email:</strong> ${escapeHtml(payload.contact.email || "")}</p>
+    <p><strong>Property:</strong> ${escapeHtml(formatAddressForDisplay(payload.property))}</p>
+  `;
+  confirmationDetails.hidden = false;
+}
+
 function showBookedConfirmation(payload, booking) {
   const bookedPayload = payload || lastSubmittedLeadPayload;
   const formattedStartTime = booking?.startTime ? new Date(booking.startTime).toLocaleString() : "";
+
+  clearBookingStatusPollingTimer();
 
   if (confirmationEyebrow) {
     confirmationEyebrow.textContent = "Appointment booked";
@@ -416,6 +436,8 @@ function showBookedConfirmation(payload, booking) {
     newRequestButton.hidden = false;
     newRequestButton.textContent = "Submit another request";
   }
+
+  schedulePostSubmitRedirect(bookedPayload, booking);
 }
 
 function prepareSchedulerState(payload) {
@@ -423,8 +445,9 @@ function prepareSchedulerState(payload) {
     return;
   }
 
+  clearBookingStatusPollingTimer();
   schedulerShell.hidden = false;
-  setSchedulerStatus("Preparing scheduler...");
+  setSchedulerStatus("Loading appointment availability...", "success");
 
   if (schedulerLaunchButton) {
     schedulerLaunchButton.hidden = false;
@@ -441,7 +464,8 @@ function prepareSchedulerState(payload) {
   }
 
   renderSchedulerFallback("", false);
-  openCalComModal(payload);
+  startBookingStatusPolling(payload);
+  renderCalComEmbed(payload);
 }
 
 function openCalComModal(payload) {
@@ -721,6 +745,7 @@ function setSchedulerStatus(message, tone = "") {
 
 function resetSchedulerState() {
   calComInitToken += 1;
+  clearBookingStatusPollingTimer();
 
   if (schedulerShell) {
     schedulerShell.hidden = true;
@@ -824,6 +849,115 @@ function registerCalComEventBindings() {
   });
 
   calComEventBindingsRegistered = true;
+}
+
+function startBookingStatusPolling(payload) {
+  clearBookingStatusPollingTimer();
+
+  if (!API_BASE || !payload?.contact?.email) {
+    return;
+  }
+
+  bookingStatusPollingStartedAt = Date.now();
+  queueBookingStatusPoll(4000);
+}
+
+function queueBookingStatusPoll(delayMs = CAL_BOOKING_STATUS_POLL_INTERVAL_MS) {
+  clearBookingStatusPollingTimer();
+
+  if (!lastSubmittedLeadPayload || schedulerShell?.hidden || confirmationPanel?.hidden) {
+    return;
+  }
+
+  bookingStatusPollTimer = window.setTimeout(() => {
+    pollBookingStatusFromServer();
+  }, Math.max(0, delayMs));
+}
+
+async function pollBookingStatusFromServer() {
+  if (!lastSubmittedLeadPayload || schedulerShell?.hidden || confirmationPanel?.hidden) {
+    return;
+  }
+
+  if (Date.now() - bookingStatusPollingStartedAt > CAL_BOOKING_STATUS_POLL_WINDOW_MS) {
+    clearBookingStatusPollingTimer();
+    return;
+  }
+
+  try {
+    const statusUrl = new URL(`${API_BASE}/api/cal/booking-status`);
+    statusUrl.searchParams.set("email", lastSubmittedLeadPayload.contact.email || "");
+    statusUrl.searchParams.set("after", lastSubmittedLeadPayload.meta?.submittedAt || new Date().toISOString());
+
+    const response = await fetch(statusUrl.toString(), {
+      headers: {
+        Accept: "application/json"
+      }
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (response.ok && payload?.booking?.confirmed) {
+      showBookedConfirmation(lastSubmittedLeadPayload, {
+        uid: payload.booking.bookingUid || "",
+        startTime: payload.booking.startTime || "",
+        endTime: payload.booking.endTime || "",
+        status: payload.booking.status || "accepted"
+      });
+      return;
+    }
+  } catch {
+    // Ignore transient polling failures and keep waiting for a confirmed booking.
+  }
+
+  queueBookingStatusPoll();
+}
+
+function clearBookingStatusPollingTimer() {
+  if (!bookingStatusPollTimer) {
+    return;
+  }
+
+  window.clearTimeout(bookingStatusPollTimer);
+  bookingStatusPollTimer = 0;
+}
+
+function schedulePostSubmitRedirect(payload, booking) {
+  clearPostSubmitRedirectTimer();
+
+  if (!POST_SUBMIT_PAGE_PATH) {
+    return;
+  }
+
+  postSubmitRedirectTimer = window.setTimeout(() => {
+    window.location.assign(buildPostSubmitPageUrl(payload, booking));
+  }, Math.max(0, POST_SUBMIT_REDIRECT_DELAY_MS));
+}
+
+function clearPostSubmitRedirectTimer() {
+  if (!postSubmitRedirectTimer) {
+    return;
+  }
+
+  window.clearTimeout(postSubmitRedirectTimer);
+  postSubmitRedirectTimer = 0;
+}
+
+function buildPostSubmitPageUrl(payload, booking) {
+  const url = new URL(POST_SUBMIT_PAGE_PATH, window.location.href);
+
+  if (POST_SUBMIT_VIDEO_URL) {
+    url.searchParams.set("video", POST_SUBMIT_VIDEO_URL);
+  }
+
+  if (payload?.contact?.fullName) {
+    url.searchParams.set("name", payload.contact.fullName);
+  }
+
+  if (booking?.startTime) {
+    url.searchParams.set("appointment", booking.startTime);
+  }
+
+  return url.toString();
 }
 
 function isFormStarted() {
@@ -1305,7 +1439,7 @@ schedulerLaunchButton?.addEventListener("click", () => {
     return;
   }
 
-  openCalComModal(lastSubmittedLeadPayload);
+  prepareSchedulerState(lastSubmittedLeadPayload);
 });
 showStep(0);
 initializeTurnstile();

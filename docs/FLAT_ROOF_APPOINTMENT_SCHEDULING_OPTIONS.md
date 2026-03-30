@@ -400,7 +400,7 @@ Validation status:
 
 ## Objective
 
-Promote the confirmed lead-first integrated booking flow into production without changing the rest of the production landing experience. The production rollout should keep Cloudflare Turnstile active, preserve the current hero/reviews/pixel/exit-intent behavior, and limit production change scope to the lead-collection and immediate booking handoff only.
+Promote the confirmed lead-first integrated booking flow into production without changing the rest of the production landing experience. The production rollout should intentionally remove Cloudflare Turnstile from this flat-roof landing flow, preserve the current hero/reviews/pixel/exit-intent behavior, and limit production change scope to the lead-collection and immediate booking handoff only.
 
 ## Scope Constraint
 
@@ -415,7 +415,7 @@ Everything else should remain unchanged for the first production pass:
 - reviews and review-widget mode
 - Meta Pixel
 - exit-intent modal behavior
-- Turnstile protection
+- removal of Turnstile from this landing flow
 - Worker lead-delivery integrations outside the booking handoff
 
 ## Development Plan
@@ -430,7 +430,7 @@ User stories:
 
 Planned production behavior:
 
-1. Keep the current 3-step production form and Turnstile placement.
+1. Keep the current 3-step production form, but remove the Turnstile widget and Turnstile submit requirement from this landing flow.
 2. Submit the lead through the existing `POST /api/lead` route.
 3. If lead submit succeeds, open the in-page booking stage automatically on the production landing page.
 4. Keep webhook-backed booking confirmation and polling fallback enabled for booking completion.
@@ -440,14 +440,14 @@ Planned production behavior:
 
 User stories:
 
-- As operations, I can observe whether Turnstile or the integrated booking handoff affects production lead completion.
+- As operations, I can observe whether removing Turnstile or changing the integrated booking handoff affects production lead completion and lead quality.
 - As the site owner, I can revert quickly to the current redirect-based scheduling flow if production metrics or user behavior regress.
 
 Rollback model:
 
 1. Keep `site/schedule.html` and `site/assets/schedule.js` intact during the rollout.
 2. Treat the current redirect-based scheduler path as the rollback target.
-3. If conversion, Turnstile completion, or lead delivery regresses, restore the current `index.html` + `app.js` redirect path and redeploy only the static site.
+3. If conversion, lead quality, spam volume, or lead delivery regresses, restore the previous guarded flow and redeploy only the necessary code.
 
 ## System Design
 
@@ -480,7 +480,7 @@ Production touch map should stay narrow:
 	- replace current confirmation-only or redirect handoff area with integrated booking-stage markup
 - `site/assets/app.js`
 	- replace redirect-to-scheduler behavior with the confirmed lead-first integrated booking controller
-	- preserve Turnstile submit gating
+	- remove Turnstile submit gating for this production landing flow only
 	- preserve current payload normalization and tracking behavior
 - `site/assets/styles.css`
 	- add only the minimum integrated-booking styles needed if they are ported from the prototype
@@ -501,7 +501,7 @@ No new public production lead endpoint is required for rollout if the current Wo
 
 Before production cutover, confirm:
 
-1. `prd` has a valid `TURNSTILE_SECRET_KEY`.
+1. Production code is intentionally configured so source `facebook-flat-roof-landing` bypasses Turnstile verification.
 2. `prd` has a valid `CAL_COM_WEBHOOK_SECRET`.
 3. Production D1 has migration `worker/migrations/0002_cal_booking_confirmations.sql` applied.
 4. Cal.com production webhook is pointed to `https://ecosystemsca.net/api/cal/webhook`.
@@ -509,7 +509,7 @@ Before production cutover, confirm:
 
 ### Security notes
 
-- Keep Turnstile enabled exactly as production uses it today; do not bypass it in production.
+- Accept the higher spam-abuse risk that comes with removing Turnstile from this landing flow, and monitor lead quality closely after deploy.
 - Do not widen the lead payload or expose webhook diagnostics in public responses.
 - Do not remove the current lead-first ordering; JobNimbus, Sheets, and email should still happen before booking opens.
 - Do not change review, pixel, or modal logic in the same deploy.
@@ -544,10 +544,10 @@ Files that should remain unchanged in the first production pass unless a blocker
 ### Phase 0: Production readiness checks
 
 1. Confirm production Worker health.
-2. Confirm `prd` secrets for Turnstile and Cal.com webhook.
+2. Confirm the production code path for source `facebook-flat-roof-landing` no longer depends on Turnstile, and confirm the Cal.com webhook secret remains valid.
 3. Confirm production D1 has the Cal.com booking-confirmation migration.
 4. Confirm Cal.com production webhook delivery target and secret.
-5. Confirm the production Turnstile widget still issues valid browser tokens on the live domain.
+5. Confirm the production landing page no longer renders the Turnstile widget on the live domain.
 
 ### Phase 1: Minimal production code cutover
 
@@ -556,12 +556,12 @@ Files that should remain unchanged in the first production pass unless a blocker
 3. Keep `schedule.html` in the repo as rollback support.
 4. Deploy Pages only after static validation is clean.
 
-### Phase 2: Observation window with Turnstile enabled
+### Phase 2: Observation window with Turnstile removed
 
 Monitor these signals after deploy:
 
 1. Production `POST /api/lead` success rate.
-2. Turnstile rejection rate and user-facing challenge behavior.
+2. Spam, junk-lead rate, and any visible abuse increase after Turnstile removal.
 3. JobNimbus lead creation continuity.
 4. Google Sheets append continuity.
 5. Lead-notification email continuity.
@@ -577,7 +577,7 @@ Recommended observation periods:
 
 ### Phase 3: Decision gate
 
-If the observation window shows stable lead delivery and no Turnstile-related friction spike:
+If the observation window shows stable lead delivery and acceptable spam levels after Turnstile removal:
 
 - keep the integrated flow as the new production default
 - then decide whether to retire the dedicated `schedule.html` path later
@@ -592,7 +592,7 @@ If the observation window shows regression:
 Pre-deploy:
 
 1. Static validation on changed production files.
-2. Local preview with a real browser and Turnstile active on a production-like host where possible.
+2. Local preview with a real browser to confirm the integrated flow works without Turnstile on a production-like host where possible.
 3. One full production smoke test immediately after deploy with real lead creation and booking completion.
 
 Post-deploy:
@@ -600,12 +600,151 @@ Post-deploy:
 1. Confirm one successful lead reaches JobNimbus.
 2. Confirm one successful lead writes to Google Sheets.
 3. Confirm one successful lead triggers the owner-notification email.
-4. Confirm Turnstile does not block a normal production user path.
+4. Confirm the production path works normally without any Turnstile checkpoint.
 5. Confirm one real booking creates a Cal.com webhook record and can be confirmed by the Worker booking-status path.
 
 ## Recommended Next Step
 
-Do not deploy a broad production refactor. Implement a narrow production cutover that ports only the confirmed prototype lead-collection handoff into the existing production landing page, keep Turnstile on, and observe it against the current delivery baseline before removing the legacy scheduler page.
+Do not deploy a broad production refactor. Implement a narrow production cutover that ports only the confirmed prototype lead-collection handoff into the existing production landing page, remove Turnstile for this flow deliberately, and observe it against the current delivery baseline and spam baseline before removing the legacy scheduler page.
+
+## Evening Downtime Deployment Checklist
+
+Use this checklist during the low-activity production window so the rollout stays narrow and reversible.
+
+### Pre-window
+
+1. Confirm current traffic is low enough to tolerate a brief lead-flow change window.
+2. Confirm the latest committed branch tip is the one intended for the production cutover.
+3. Confirm `prd` Worker health at `/health`.
+4. Confirm production Cal.com webhook target is `https://ecosystemsca.net/api/cal/webhook`.
+5. Confirm `CAL_COM_WEBHOOK_SECRET` is set in the production Worker environment.
+6. Confirm the production Worker code deployed for source `facebook-flat-roof-landing` bypasses Turnstile verification as intended.
+7. Confirm production D1 already has `worker/migrations/0002_cal_booking_confirmations.sql` applied.
+8. Record the current production Pages deployment ID or git commit so rollback is immediate if needed.
+
+### Freeze scope
+
+1. Do not combine this rollout with review-widget, pixel, modal, copy, or broader layout changes.
+2. Do not change JobNimbus, Google Sheets, or email-delivery logic in the same window.
+3. Do not remove `site/schedule.html` or `site/assets/schedule.js` during the first rollout.
+
+### Pre-deploy validation
+
+1. Run static validation on the exact production files being changed.
+2. Preview the integrated flow locally with the production-like lead ordering.
+3. Confirm the final CTA labeled `Next` still submits the lead first and only then opens the calendar.
+4. Confirm the booking stage stays hidden until the final form CTA is clicked.
+5. Confirm Turnstile is absent from the production flow and the lead submit path is not waiting for a Turnstile token.
+
+### Deploy sequence
+
+1. Deploy only the static Pages changes for the narrow production handoff cutover.
+2. Do not deploy unrelated Worker code unless a prereq gap is discovered.
+3. If a Worker secret or D1 prerequisite must be corrected, do that before the Pages deploy, not during user traffic validation.
+4. Hard-refresh the production landing page after deploy to verify the latest asset version is active.
+
+### Immediate smoke test
+
+1. Submit one real production lead through the live page.
+2. Confirm the lead reaches JobNimbus.
+3. Confirm the lead writes to Google Sheets.
+4. Confirm the owner-notification email is received.
+5. Confirm the customer can reach the calendar immediately after clicking `Next` with no Turnstile checkpoint.
+6. Confirm the calendar opens automatically after the lead submit succeeds.
+7. Complete one real booking.
+8. Confirm the Cal.com webhook arrives in production.
+9. Confirm booking lookup can be reconciled through `GET /api/cal/booking-status` behavior if the embed callback does not return.
+
+### Observation window
+
+1. Watch the first 30 minutes closely for lead-submit failures and booking drop-off.
+2. Watch the first 24 hours for spam increase, booking complaints, or CRM logging regressions.
+3. Compare lead-submit to booking-complete behavior against the current production baseline for 3 to 7 days.
+
+### Rollback trigger
+
+Rollback immediately if any of these occur:
+
+1. Spam or junk-lead volume rises materially after Turnstile removal.
+2. Lead-submit success drops unexpectedly.
+3. JobNimbus, Sheets, or owner-email delivery regresses.
+4. The booking stage fails to open reliably after lead submit.
+5. The booking webhook or fallback confirmation path behaves inconsistently in production.
+
+### Rollback action
+
+1. Restore the current redirect-based production handoff in `site/index.html` and `site/assets/app.js`.
+2. Redeploy only the static Pages site.
+3. Leave the Worker webhook routes and D1 booking-confirmation storage intact because they are additive and low-risk.
+
+## Minimal Production File Diff
+
+This is the narrowest recommended implementation surface for the evening production rollout.
+
+### Files to change
+
+#### `site/index.html`
+
+Change only the lead-collection handoff area.
+
+- Keep the current hero, trust, reviews, pixel, and exit-intent sections unchanged.
+- Keep the current 3-step form structure unchanged, but remove Turnstile from this landing flow.
+- Replace the current post-submit redirect-oriented confirmation/scheduler handoff markup with the integrated in-page booking-stage markup pattern proven in the prototype.
+- Keep any production-specific copy consistent with the current live landing tone.
+
+#### `site/assets/app.js`
+
+This is the main production logic change.
+
+- Remove the redirect dependency on `site/schedule.html` for the primary flow.
+- Preserve the existing lead payload shape and tracking, but remove Turnstile gating for this production source.
+- Submit the lead through `POST /api/lead` first.
+- On successful lead submit, reveal the in-page booking stage automatically.
+- Mount Cal.com inline using the validated loader pattern.
+- Keep webhook-backed fallback confirmation using `GET /api/cal/booking-status`.
+- Preserve visible recovery states if lead submit fails.
+
+#### `site/assets/styles.css`
+
+Add only the styles needed to support the integrated booking stage in production.
+
+- Port only the booking-stage layout, hidden-state handling, summary card, booking card, fallback, and confirmation styles required by the production handoff.
+- Do not refactor unrelated landing-page layout or review styles in the same change.
+
+#### `docs/FLAT_ROOF_APPOINTMENT_SCHEDULING_OPTIONS.md`
+
+- Record the actual production cutover, validation, and observation results after the deployment window.
+
+### Files to keep unchanged during first production rollout
+
+#### `site/schedule.html`
+
+- Keep as rollback support.
+- Do not remove in the first production cutover.
+
+#### `site/assets/schedule.js`
+
+- Keep as rollback support.
+- Do not remove in the first production cutover.
+
+#### `worker/src/index.js`
+
+- No production code change is required if `POST /api/cal/webhook` and `GET /api/cal/booking-status` are already deployed and production secrets are correct.
+- Touch this file only if prereq verification reveals a real production gap.
+
+#### `worker/migrations/0002_cal_booking_confirmations.sql`
+
+- Do not edit the migration during rollout.
+- Only confirm it has already been applied in production D1.
+
+### Minimal implementation rule
+
+If a change does not directly support one of these production behaviors, leave it out of the evening rollout:
+
+1. lead submits first
+2. calendar opens automatically after successful lead submit
+3. Turnstile stays off for source `facebook-flat-roof-landing`
+4. booking confirmation remains recoverable through webhook-backed fallback
 
 Frontend:
 
@@ -623,6 +762,192 @@ Operational setup:
 - Connect the scheduler platform to the client's Gmail Google Calendar.
 - Configure appointment duration, buffers, working hours, and email reminders.
 - Restrict visible availability to the next 3 days.
+
+## March 30, 2026 Minimal Production Cutover Prepared
+
+The narrow production patch described above has now been prepared in the repository, but it has not been deployed yet.
+
+What changed:
+
+- Updated the final production Step 3 CTA in `site/index.html` from `Submit` to `Next` so the customer-facing language matches the approved rollout plan.
+- Kept the current landing page structure intact and reused the existing in-page confirmation and scheduler container instead of redirecting the customer to `site/schedule.html` for the primary flow.
+- Updated `site/assets/app.js` so a successful `POST /api/lead` now opens the on-page booking state automatically after the lead is recorded, while preserving the existing lead payload shape.
+
+## March 30, 2026 Production Decision Update: Disable Turnstile For This Landing Flow
+
+The production rollout decision changed again after preparing the narrow cutover. Turnstile is now intentionally disabled for the flat-roof landing flow because it may be suppressing valid lead submissions.
+
+What changed:
+
+- Removed the Turnstile script and site key from `site/index.html` for the production landing page.
+- Kept the frontend Turnstile code dormant in `site/assets/app.js` by leaving the site key blank, so the existing form logic no longer waits for a security token.
+- Updated `worker/src/index.js` so lead source `facebook-flat-roof-landing` bypasses Turnstile verification, while the existing localhost-only prototype bypass remains scoped to `facebook-flat-roof-integrated-prototype`.
+- Kept the rest of the lead-delivery pipeline unchanged: JobNimbus, Google Sheets logging, email notification, Cal.com webhook support, and booking-status lookup.
+
+Operational consequence:
+
+- This removes a form-level anti-abuse checkpoint from the production flat-roof landing flow.
+- The immediate production risk shifts from false-negative human blocking to higher spam and junk-lead exposure.
+- Post-deploy observation must now include lead-quality and abuse monitoring, not just lead-completion monitoring.
+
+Files touched for this decision update:
+
+- `site/index.html`
+- `worker/src/index.js`
+- `README.md`
+- `docs/FLAT_ROOF_APPOINTMENT_SCHEDULING_OPTIONS.md`
+
+Validation status:
+
+- Static editor validation should be run on the changed frontend, Worker, and documentation files.
+- No production deploy was run as part of this change.
+- No live production spam/quality observation has been run yet, so the operational effect remains unverified.
+
+## March 30, 2026 Production Webhook Secret Provisioned
+
+The production Cal.com webhook has now been created, and the matching Worker secret has been stored for the production environment.
+
+What changed:
+
+- Confirmed the production Cal.com webhook exists for the production booking flow.
+- Stored `CAL_COM_WEBHOOK_SECRET` in the `prd` Worker environment using Wrangler secret management.
+- This completes the shared-secret prerequisite for signed webhook verification on `POST /api/cal/webhook` in production.
+
+Operational status:
+
+- The production Worker now has the shared secret required to verify incoming Cal.com webhook signatures.
+- This does not by itself deploy any new Worker code.
+- End-to-end production webhook receipt is still unverified until one real production booking is completed after deploy.
+
+Validation performed:
+
+- Wrangler reported successful upload of secret `CAL_COM_WEBHOOK_SECRET` to Worker environment `prd`.
+- No production booking webhook delivery test was run in this step.
+
+## March 30, 2026 Production D1 Migration Applied
+
+The production D1 database now has the Cal.com booking-confirmation migration applied.
+
+What changed:
+
+- Applied remote migration `0002_cal_booking_confirmations.sql` to production binding `REVIEWS_DB`.
+- This creates the production storage required for webhook-backed booking confirmation and booking-status lookup.
+- The production Worker and production webhook secret were already in place before this migration was applied.
+
+Validation performed:
+
+- Wrangler reported successful execution of `0002_cal_booking_confirmations.sql` against the remote production D1 database `ecosystemsca-review-archive`.
+- Remote migration status was re-checked after apply to confirm no pending production migration remained for `0002_cal_booking_confirmations.sql`.
+- No live production booking webhook was executed in this step.
+
+## March 30, 2026 Production CSS Follow-Up: Hidden Turnstile Shell
+
+After the production deploy, the page still showed the text `Protected by Cloudflare` even though Turnstile had been disabled.
+
+Root cause:
+
+- The Turnstile container in `site/index.html` still carries the `hidden` attribute, but `site/assets/styles.css` set `.turnstile-shell { display: grid; }` without a matching `[hidden]` override.
+- That caused the disabled Turnstile shell copy to remain visible even though the Turnstile script and site key had already been removed.
+
+Fix applied:
+
+- Added `.turnstile-shell[hidden] { display: none; }` to `site/assets/styles.css`.
+- Bumped the production asset version in `site/index.html` so the corrected stylesheet is fetched immediately by production browsers.
+- Redeployed the static Pages site after the CSS fix.
+
+Validation performed:
+
+- Static editor validation passed for the updated HTML and CSS files.
+- Production Pages redeploy completed successfully.
+- Live custom-domain verification confirmed the new asset version is being served and the stylesheet now contains the `.turnstile-shell[hidden]` rule.
+- Added webhook-backed booking-status polling to the production frontend so the Worker can still confirm the booking if the Cal.com frontend callback does not return.
+- Kept `site/schedule.html` and `site/assets/schedule.js` unchanged as rollback support for the first production observation window.
+- Added the minimum hidden-state CSS in `site/assets/styles.css` so the confirmation details and booking stage respect the HTML `hidden` attribute during the new handoff.
+
+Files touched for this prepared cutover:
+
+- `site/index.html`
+- `site/assets/app.js`
+- `site/assets/styles.css`
+- `docs/FLAT_ROOF_APPOINTMENT_SCHEDULING_OPTIONS.md`
+
+Validation status:
+
+- Static editor validation should be run on the changed production files before deploy.
+- No production deploy was run as part of preparing this patch.
+- No live production smoke test was run in this session.
+
+## March 30, 2026 Production Post-Booking Follow-Up Page Implemented
+
+The production integrated booking flow now redirects booked leads to a dedicated post-booking follow-up page modeled on the approved prototype page pattern.
+
+What changed:
+
+- Added a new production follow-up page at `site/post-booking-video.html` using `site/prototype-post-submit-video.html` as the layout and content pattern.
+- Added `site/assets/post-booking.js` to populate the follow-up page from booking query parameters such as customer name and appointment time.
+- Updated `site/assets/app.js` so both production booking-confirmation paths now schedule a redirect to the new follow-up page after the in-page confirmation state is shown briefly.
+- Added production follow-up page styles to `site/assets/styles.css` and wired page config in `site/index.html` so the page can use the configured post-booking video asset.
+
+Files touched for this implementation:
+
+- `site/index.html`
+- `site/assets/app.js`
+- `site/assets/styles.css`
+- `site/post-booking-video.html`
+- `site/assets/post-booking.js`
+
+Validation status:
+
+- Static editor validation should be run on the updated frontend files.
+- Live production retest still needs one real booking to confirm the redirect path opens the new follow-up page correctly from both the frontend callback path and the webhook-backed polling path.
+
+## Google Sheets Tracking Documentation
+
+Current state:
+
+- The Worker appends the lead to Google Sheets at lead-submit time and now writes a final `Appointment Scheduled?` column with the default value `No`.
+- Cal.com booking webhooks now update the most recent matching Google Sheets lead row to `Appointment Scheduled? = Yes` or `No` based on the current webhook status.
+- Matching currently uses the submitted lead email address and, when present in the webhook payload, the property address as an additional safeguard.
+
+Files touched for this tracking change:
+
+- `worker/src/index.js`
+- `README.md`
+- `docs/FLAT_ROOF_APPOINTMENT_SCHEDULING_OPTIONS.md`
+
+Validation status:
+
+- Static editor validation passed for `worker/src/index.js` after the Sheets update logic was added.
+- Live webhook-to-Sheets confirmation still depends on one production booking or a signed production webhook test against a spreadsheet that already includes the `Appointment Scheduled?` column header.
+
+## March 30, 2026 Production Worker Deploy For Google Sheets Appointment Status
+
+The production Worker has been redeployed with the simplified Google Sheets appointment-status update logic.
+
+Deployment result:
+
+- Production Worker deploy succeeded after clearing conflicting local Cloudflare token environment variables so Wrangler used the correct OAuth session.
+- Current production Worker version: `99436516-2ec6-4894-8232-8db7c72566a6`.
+- Active production routes remain `https://ecosystemsca.net/api/*` and `https://www.ecosystemsca.net/api/*`.
+
+Validation status:
+
+- Production deployment succeeded.
+- A labeled production test lead was submitted successfully to `POST /api/lead`.
+- A signed production `BOOKING_CREATED` webhook replay was accepted successfully by `POST /api/cal/webhook` using the configured production shared secret.
+- A follow-up call to `GET /api/cal/booking-status` for the same test email returned `confirmed: true` with booking uid `booking-20260330175251` and the expected test address.
+- Live `wrangler tail` output showed the lead request, signed webhook request, and booking-status lookup all completing with `Ok`, and no Worker-side `Google Sheets appointment update failed` log was emitted during the test window.
+- Final operator verification confirmed the matching Google Sheets row was updated and recorded `Appointment Scheduled? = Yes`.
+
+## Deferred Todo: Address Autocomplete
+
+Address autocomplete has been deferred for now.
+
+Todo for a future session:
+
+1. Add a Worker-backed predictive address flow using the chosen open-source maps provider.
+2. Replace the manual address entry step with structured verified-address selection.
+3. Persist the verified address metadata alongside the lead payload and booking metadata.
 
 ## March 29, 2026 Operational Clarification: Cal.com To Google Calendar
 
@@ -749,7 +1074,7 @@ If the business still wants a visible final control, it should be a confirmation
 1. Step 1 stays the same.
 2. Step 2 stays the same.
 3. Step 3 collects name, phone, email, and passes Turnstile.
-4. The current `Submit` button becomes `Next: Pick Appointment`.
+4. The current `Submit` button becomes `Next`.
 5. The page transitions into an inline or modal Cal.com booking state without leaving `index.html`.
 6. On `bookingSuccessfulV2`, the frontend submits the lead to the Worker.
 7. The Worker returns the normal success response.
@@ -926,7 +1251,7 @@ Prototype assets:
 Prototype behavior target:
 
 1. Step 1 through Step 3 remain in-page.
-2. The final contact-step CTA becomes `Next: Pick Appointment`.
+2. The final contact-step CTA becomes `Next`.
 3. The page opens the prototype Cal.com event inline on the same route.
 4. Cal.com booking success triggers the final `POST /api/lead` call automatically.
 5. The page shows a final confirmation only after both booking and lead submit succeed.

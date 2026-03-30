@@ -15,9 +15,8 @@
       rel="stylesheet"
     />
     <script>
-      window.ECO_LANDING_ASSET_VERSION = "20260327b";
+      window.ECO_LANDING_ASSET_VERSION = "20260330n";
     </script>
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
     <script src="https://apisystem.tech/js/reviews_widget.js" defer></script>
     <script>
       !(function (f, b, e, v, n, t, s) {
@@ -78,12 +77,14 @@
         googlePlaceId: "ChIJt45P39m6woARDs_3xzLtiRY",
         googleReviewScore: 5,
         googleReviewCount: 217,
-        turnstileSiteKey: "0x4AAAAAACvW69UbE6kiMDdI",
+        turnstileSiteKey: "",
         calComLink: "https://cal.com/eco-systems-roofing-la-county/at-home-roof-estimate-and-inspection",
         calComNamespace: "at-home-roof-estimate-and-inspection",
-        calComHeadline: "Step 2: Pick your inspection time",
+        calComHeadline: "Step 4: Pick your inspection time",
         calComCopy:
-          "Choose your appointment now so ECO Systems can lock in your onsite flat-roof inspection while availability is open.",
+          "Your request is already on file. Choose your appointment now so ECO Systems can reserve your onsite flat-roof inspection while availability is open.",
+        postSubmitPagePath: "./post-booking-video.html",
+        postSubmitVideoUrl: "https://ecoroofsolar.com/wp-content/uploads/2025/06/homepage_hd.mp4",
         googleReviewsUrl:
           "https://www.google.com/maps/place/ECO+Systems/@34.0200392,-118.7413853,10z/data=!3m1!4b1!4m14!1m7!3m6!1s0x80c29ba16145f7cb:0x969231ca58843855!2sECO+Systems!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl!3m5!1s0x80c29ba16145f7cb:0x969231ca58843855!8m2!3d34.020479!4d-118.4117326!16s%2Fg%2F11j5s_nsyl?hl=en&entry=ttu&g_ep=EgoyMDI2MDMxOC4xIKXMDSoASAFQAw%3D%3D",
         googleAlternateReviewsUrl:
@@ -187,7 +188,7 @@
 
               <div class="form-footer dual-action">
                 <button type="button" class="footer-button footer-button-prev" data-back>← Prev</button>
-                <button type="submit" class="footer-button footer-button-next" id="submit-button">Submit →</button>
+                <button type="submit" class="footer-button footer-button-next" id="submit-button">Next</button>
               </div>
             </section>
 
@@ -210,7 +211,7 @@
               <h4 class="sr-only" id="scheduler-title">Schedule your onsite inspection</h4>
               <p class="scheduler-status" id="scheduler-status" role="status" aria-live="polite"></p>
               <button type="button" class="scheduler-launch-button" id="scheduler-launch-button" hidden>
-                Reopen scheduler
+                Reload calendar
               </button>
               <div class="scheduler-fallback" id="scheduler-fallback" hidden>
                 <p class="scheduler-fallback-copy" id="scheduler-fallback-copy">

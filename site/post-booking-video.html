@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ECO Systems Follow-Up Video</title>
+    <meta
+      name="description"
+      content="ECO Systems post-booking follow-up page with embedded video."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      window.ECO_LANDING_ASSET_VERSION = "20260330o";
+      window.ECO_POST_BOOKING_CONFIG = {
+        videoUrl: "https://ecoroofsolar.com/wp-content/uploads/2025/06/homepage_hd.mp4",
+        homePath: "https://ecosystemsca.com"
+      };
+    </script>
+    <link rel="icon" type="image/png" href="./assets/ecosystems-logo-only.png" />
+    <script>
+      document.write(
+        `<link rel="stylesheet" href="./assets/styles.css?v=${encodeURIComponent(window.ECO_LANDING_ASSET_VERSION)}" />`
+      );
+      document.write(
+        `<script src="./assets/post-booking.js?v=${encodeURIComponent(window.ECO_LANDING_ASSET_VERSION)}" defer><\/script>`
+      );
+    </script>
+  </head>
+  <body class="follow-up-page-body">
+    <div class="page-shell follow-up-page-shell">
+      <main class="follow-up-layout">
+        <section class="intro-block follow-up-hero" aria-label="Follow-up header">
+          <img class="intro-logo" src="./assets/ecosystems-logo.png" alt="ECO Systems logo" />
+          <h1>Your booking is confirmed</h1>
+          <p class="owner-line" id="follow-up-header-copy">
+            Keep this page open as you review the next-step video and prepare for your upcoming appointment.
+          </p>
+        </section>
+
+        <section class="follow-up-stage" aria-labelledby="follow-up-video-title">
+          <video
+            id="follow-up-video"
+            class="follow-up-video"
+            autoplay
+            muted
+            loop
+            playsinline
+            preload="auto"
+            src="https://ecoroofsolar.com/wp-content/uploads/2025/06/homepage_hd.mp4"
+          >
+            Your browser does not support the video tag.
+          </video>
+          <div class="follow-up-overlay"></div>
+          <div class="follow-up-content">
+            <p class="sr-only" id="follow-up-video-title">Your booking is confirmed</p>
+            <h2 class="follow-up-title">What to expect next</h2>
+            <p class="follow-up-copy" id="follow-up-body-copy"></p>
+            <p class="follow-up-meta" id="follow-up-appointment"></p>
+          </div>
+        </section>
+
+        <div class="follow-up-actions" aria-label="Follow-up page actions">
+          <a class="submission-confirmation-button follow-up-home-button" id="follow-up-home-link" href="https://ecosystemsca.com">
+            Return to main page
+          </a>
+          <a class="follow-up-link-button" href="tel:4244074459">Need to update your appointment? Text or Call: 424-407-4459</a>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

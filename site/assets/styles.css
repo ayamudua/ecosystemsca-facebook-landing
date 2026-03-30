@@ -220,6 +220,111 @@ input {
   color: #4a4a4a;
 }
 
+body.follow-up-page-body {
+  background:
+    radial-gradient(circle at top right, rgba(243, 191, 45, 0.2), transparent 30%),
+    linear-gradient(180deg, #fff8ef 0%, #ffffff 44%, #f4f4f4 100%);
+}
+
+.follow-up-page-shell {
+  width: min(1180px, calc(100% - 32px));
+  padding: 32px 0 56px;
+}
+
+.follow-up-layout {
+  display: grid;
+  gap: 24px;
+}
+
+.follow-up-hero {
+  text-align: center;
+}
+
+.follow-up-kicker {
+  margin: 0 0 12px;
+  font-size: 0.88rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--orange-dark);
+}
+
+.follow-up-stage {
+  position: relative;
+  min-height: min(82vh, 920px);
+  border: 2px solid var(--border);
+  border-radius: 28px;
+  overflow: hidden;
+  background: #07131b;
+  box-shadow: var(--shadow);
+}
+
+.follow-up-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+.follow-up-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(5, 14, 22, 0.2) 0%, rgba(5, 14, 22, 0.58) 58%, rgba(5, 14, 22, 0.74) 100%),
+    radial-gradient(circle at top right, rgba(16, 131, 162, 0.28), transparent 32%);
+  pointer-events: none;
+}
+
+.follow-up-content {
+  position: relative;
+  z-index: 1;
+  min-height: min(82vh, 920px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: clamp(20px, 3vw, 38px);
+  color: #f8fbfd;
+}
+
+.follow-up-title {
+  margin: 0;
+  font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+  font-size: clamp(2.4rem, 5vw, 4.3rem);
+  line-height: 0.96;
+  text-transform: uppercase;
+}
+
+.follow-up-copy,
+.follow-up-meta {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.02rem, 2vw, 1.28rem);
+  line-height: 1.55;
+}
+
+.follow-up-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: center;
+  align-items: center;
+}
+
+.follow-up-home-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.follow-up-link-button {
+  color: #0b5e8f;
+  font-weight: 700;
+}
+
 .schedule-direct-link,
 .schedule-home-link,
 .schedule-phone-link {
@@ -535,6 +640,10 @@ input {
   padding: 18px 16px 0;
 }
 
+.turnstile-shell[hidden] {
+  display: none;
+}
+
 .turnstile-widget {
   min-height: 65px;
 }
@@ -583,6 +692,10 @@ input {
   border-top: 1px solid #e8e8e8;
 }
 
+.submission-confirmation-details[hidden] {
+  display: none;
+}
+
 .submission-confirmation-details p {
   margin: 0;
   color: #2b3542;
@@ -595,6 +708,10 @@ input {
   margin-top: 22px;
   padding-top: 22px;
   border-top: 1px solid #e8e8e8;
+}
+
+.scheduler-shell[hidden] {
+  display: none;
 }
 
 .scheduler-header {
@@ -1319,6 +1436,21 @@ html[data-review-mode="iframe"] .reviews-actions {
   .submission-confirmation-button {
     width: 100%;
     min-width: 0;
+  }
+
+  .follow-up-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .follow-up-actions > * {
+    width: 100%;
+    text-align: center;
+  }
+
+  .follow-up-stage,
+  .follow-up-content {
+    min-height: 72vh;
   }
 
   .schedule-direct-link,

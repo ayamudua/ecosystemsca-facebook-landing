@@ -14,6 +14,7 @@ const DEFAULT_LEAD_NOTIFICATION_FROM_EMAIL = "alerts@ecosystemsca.net";
 const DEFAULT_LEAD_NOTIFICATION_FROM_NAME = "ECO Systems Lead Alerts";
 const DEFAULT_LEAD_NOTIFICATION_SUBJECT_PREFIX = "New ECO Systems lead";
 const CAL_WEBHOOK_SIGNATURE_HEADER = "x-cal-signature-256";
+const GOOGLE_SHEETS_APPOINTMENT_SCHEDULED_COLUMN_HEADER = "Appointment Scheduled?";
 
 export default {
   async fetch(request, env) {
@@ -203,6 +204,15 @@ async function handleCalWebhook(request, env) {
   }
 
   await upsertCalBookingConfirmation(env, booking);
+
+  try {
+    await updateAppointmentScheduledInGoogleSheets(booking, env);
+  } catch (error) {
+    console.error("Google Sheets appointment update failed", {
+      bookingUid: booking.bookingUid,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
 
   return json(
     {
@@ -1111,7 +1121,8 @@ async function logLeadToGoogleSheets(lead, env, result) {
       lead.meta.ipAddress,
       lead.meta.userAgent,
       result.upstreamMessage,
-      result.upstreamResponseText
+      result.upstreamResponseText,
+      "No"
     ]
   ];
 
@@ -1131,6 +1142,118 @@ async function logLeadToGoogleSheets(lead, env, result) {
     const detail = await response.text();
     throw new Error(`Google Sheets append failed with status ${response.status}: ${truncateText(detail, 2000)}`);
   }
+}
+
+async function updateAppointmentScheduledInGoogleSheets(booking, env) {
+  if (!env.GOOGLE_SHEETS_CLIENT_EMAIL || !env.GOOGLE_SHEETS_PRIVATE_KEY || !env.GOOGLE_SHEETS_SPREADSHEET_ID) {
+    return;
+  }
+
+  const bookerEmail = normalizeEmailAddress(booking.bookerEmail);
+  if (!bookerEmail) {
+    return;
+  }
+
+  const appointmentScheduledValue = isConfirmedCalBookingStatus(booking.bookingStatus) ? "Yes" : "No";
+
+  const accessToken = await getGoogleAccessToken(env);
+  const sheetName = env.GOOGLE_SHEETS_SHEET_NAME || "Lead Log";
+  const encodedReadRange = encodeURIComponent(`${sheetName}!A:AC`);
+  const readResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${env.GOOGLE_SHEETS_SPREADSHEET_ID}/values/${encodedReadRange}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    }
+  );
+
+  if (!readResponse.ok) {
+    const detail = await readResponse.text();
+    throw new Error(`Google Sheets read failed with status ${readResponse.status}: ${truncateText(detail, 2000)}`);
+  }
+
+  const readPayload = await readResponse.json();
+  const rows = Array.isArray(readPayload.values) ? readPayload.values : [];
+  if (!rows.length) {
+    return;
+  }
+
+  const appointmentColumnIndex = resolveAppointmentScheduledColumnIndex(rows[0]);
+  const matchingRowNumber = findMatchingLeadRowNumber(rows, {
+    email: bookerEmail,
+    propertyAddress: booking.propertyAddress
+  });
+
+  if (!matchingRowNumber) {
+    return;
+  }
+
+  const writeRange = encodeURIComponent(`${sheetName}!${toSheetColumnLetter(appointmentColumnIndex + 1)}${matchingRowNumber}`);
+  const writeResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${env.GOOGLE_SHEETS_SPREADSHEET_ID}/values/${writeRange}?valueInputOption=USER_ENTERED`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ values: [[appointmentScheduledValue]] })
+    }
+  );
+
+  if (!writeResponse.ok) {
+    const detail = await writeResponse.text();
+    throw new Error(`Google Sheets update failed with status ${writeResponse.status}: ${truncateText(detail, 2000)}`);
+  }
+}
+
+function resolveAppointmentScheduledColumnIndex(headerRow) {
+  const headerIndex = headerRow.findIndex(
+    (value) => clean(value).toLowerCase() === GOOGLE_SHEETS_APPOINTMENT_SCHEDULED_COLUMN_HEADER.toLowerCase()
+  );
+
+  return headerIndex >= 0 ? headerIndex : 28;
+}
+
+function findMatchingLeadRowNumber(rows, criteria) {
+  for (let index = rows.length - 1; index >= 1; index -= 1) {
+    const row = rows[index] || [];
+    const email = normalizeEmailAddress(row[7]);
+    if (email !== criteria.email) {
+      continue;
+    }
+
+    if (criteria.propertyAddress) {
+      const address = clean(row[8]);
+      const fullAddress = clean(row[12]);
+      const normalizedPropertyAddress = clean(criteria.propertyAddress);
+      if (
+        normalizedPropertyAddress &&
+        address !== normalizedPropertyAddress &&
+        fullAddress !== normalizedPropertyAddress
+      ) {
+        continue;
+      }
+    }
+
+    return index + 1;
+  }
+
+  return 0;
+}
+
+function toSheetColumnLetter(columnNumber) {
+  let current = Number(columnNumber);
+  let label = "";
+
+  while (current > 0) {
+    const remainder = (current - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    current = Math.floor((current - 1) / 26);
+  }
+
+  return label;
 }
 
 async function sendLeadNotificationEmail(lead, env, result) {
@@ -1168,7 +1291,7 @@ async function sendLeadNotificationEmail(lead, env, result) {
 }
 
 async function verifyTurnstileSubmission(body, request, env) {
-  if (shouldBypassTurnstileForPrototype(body, request)) {
+  if (shouldBypassTurnstileVerification(body, request)) {
     return {
       ok: true,
       status: 200,
@@ -1424,8 +1547,13 @@ function isConfirmedCalBookingStatus(status) {
   return ["accepted", "rescheduled"].includes(clean(status).toLowerCase());
 }
 
-function shouldBypassTurnstileForPrototype(body, request) {
+function shouldBypassTurnstileVerification(body, request) {
   const source = clean(body?.meta?.source);
+
+  if (source === "facebook-flat-roof-landing") {
+    return true;
+  }
+
   if (source !== "facebook-flat-roof-integrated-prototype") {
     return false;
   }

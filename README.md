@@ -12,7 +12,8 @@ Minimal static landing page plus Cloudflare Worker for a flat-roof Facebook camp
 
 - Landing page patterned on the existing flat-roofs funnel with minimal deviation in flow
 - Three-step form that submits to `POST /api/lead`
-- Post-submit scheduling flow that redirects to a dedicated first-party scheduling page with Cal.com prefill values in the URL
+- Integrated post-submit scheduling flow on the production landing page with Cal.com prefill values generated from the submitted lead data
+- Dedicated first-party post-booking follow-up page for completed appointments
 - Worker endpoint that validates the form, forwards the lead to JobNimbus, logs every attempt to Google Sheets, and sends an owner notification email for each completed submission attempt
 - Worker endpoint that fetches Google review highlights from the Places API and returns a normalized carousel payload
 - D1-backed review archive endpoints that can serve a fuller synced Google Business Profile archive plus owner responses
@@ -95,8 +96,8 @@ Recommended lead email values:
 
 Turnstile values:
 
-- `TURNSTILE_SECRET_KEY` must be stored as a Worker secret in each environment
-- the public Turnstile site key is intentionally embedded in [site/index.html](site/index.html) because Cloudflare site keys are meant to be public
+- `TURNSTILE_SECRET_KEY` can remain stored as a Worker secret, but the March 30, 2026 flat-roof production cutover intentionally bypasses Turnstile for lead source `facebook-flat-roof-landing`
+- the public Turnstile site key is no longer enabled in [site/index.html](site/index.html) for the current production flat-roof landing flow
 
 `GOOGLE_BUSINESS_ACCOUNT_ID` is optional when the Google Cloud project has Business Profile account-management API access enabled. If omitted, the Worker will try to discover the first accessible account automatically.
 
@@ -125,9 +126,21 @@ If Google returns `SERVICE_DISABLED` or says `Google Sheets API has not been use
 
 Suggested header row for the sheet:
 
-`timestamp | outcome | jobnimbus_status | first_name | last_name | full_name | phone | email | address | city | state | zip | full_address | county | property_type | issue | timeline | roof_condition | utm_source | utm_medium | utm_campaign | utm_content | fbclid | page_url | ip_address | user_agent | upstream_message | upstream_response`
+`timestamp | outcome | jobnimbus_status | first_name | last_name | full_name | phone | email | address | city | state | zip | full_address | county | property_type | issue | timeline | roof_condition | utm_source | utm_medium | utm_campaign | utm_content | fbclid | page_url | ip_address | user_agent | upstream_message | upstream_response | Appointment Scheduled?`
+
+Current state:
+
+- The Worker appends the initial lead row to Google Sheets at lead-submit time and writes `Appointment Scheduled? = No` in the final column.
+- Cal.com booking webhooks now update the most recent matching lead row in Google Sheets to `Appointment Scheduled? = Yes` for confirmed bookings and `No` for non-confirmed booking states, using the submitted email address, with property address used as an additional matcher when it is available.
+- Address autocomplete has been deferred and remains a future todo.
 
 ## Cloudflare Turnstile setup
+
+Current status:
+
+- The production flat-roof landing flow currently has Turnstile disabled by design for lead source `facebook-flat-roof-landing`.
+- The Worker bypass remains source-scoped so the localhost-only prototype exception still applies only to `facebook-flat-roof-integrated-prototype` from localhost origins.
+- If Turnstile is re-enabled later, restore the site key in [site/index.html](site/index.html) and remove the source bypass in [worker/src/index.js](worker/src/index.js).
 
 1. Create a Turnstile widget in Cloudflare.
 2. Add the public site key to the inline landing-page config in [site/index.html](site/index.html).
