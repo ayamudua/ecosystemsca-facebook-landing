@@ -1,5 +1,7 @@
 JOBNIMBUS_API_KEY="replace-with-jobnimbus-api-key"
 JOBNIMBUS_API_BASE_URL="https://app.jobnimbus.com"
+JOBNIMBUS_BOOKING_TASK_TITLE="Initial Appointment"
+JOBNIMBUS_BOOKING_TASK_TYPE="Initial Appointment"
 JOBNIMBUS_RESOURCE_PATH="api1/contacts"
 JOBNIMBUS_RECORD_TYPE="lead"
 JOBNIMBUS_SOURCE="Facebook Flat Roof Landing"
@@ -35,6 +37,11 @@ LEAD_NOTIFICATION_EMAIL_FROM_NAME="ECO Systems Lead Alerts"
 # LEAD_NOTIFICATION_SUBJECT_PREFIX="New ECO Systems lead"
 
 REVIEW_ARCHIVE_ADMIN_TOKEN="replace-with-any-random-long-secret-used-only-by-this-worker"
+META_PIXEL_ID="1093337934791191"
+META_CONVERSIONS_API_TOKEN="replace-with-meta-conversions-api-token"
+# Optional Events Manager validation code for test-mode sends.
+# META_TEST_EVENT_CODE="replace-with-meta-test-event-code"
+SITE_ORIGIN="https://ecosystemsca.net"
 # Backward-compatible legacy name, not recommended for new setup:
 # ADMIN_SYNC_TOKEN="replace-with-admin-sync-token"
 ALLOWED_ORIGIN="https://your-root-domain.com"

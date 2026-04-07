@@ -331,7 +331,7 @@ Operational setup required:
 2. Create a webhook for at least `Booking Created`.
 3. Point it at the correct Worker environment endpoint:
 	- development: `https://devmt.ecolanding.workers.dev/api/cal/webhook`
-	- production: `https://ecosystemsca.net/api/cal/webhook`
+	- production: `https://prd.ecolanding.workers.dev/api/cal/webhook`
 4. Set a shared secret in Cal.com and store the same value in Worker secret `CAL_COM_WEBHOOK_SECRET`.
 5. Apply migration `0002_cal_booking_confirmations.sql` to the D1 database before testing booking-status polling.
 
@@ -504,7 +504,7 @@ Before production cutover, confirm:
 1. Production code is intentionally configured so source `facebook-flat-roof-landing` bypasses Turnstile verification.
 2. `prd` has a valid `CAL_COM_WEBHOOK_SECRET`.
 3. Production D1 has migration `worker/migrations/0002_cal_booking_confirmations.sql` applied.
-4. Cal.com production webhook is pointed to `https://ecosystemsca.net/api/cal/webhook`.
+4. Cal.com production webhook is pointed to `https://prd.ecolanding.workers.dev/api/cal/webhook`.
 5. Production Cal.com event configuration matches the tested event behavior and still writes bookings to the correct Google Calendar.
 
 ### Security notes
@@ -616,11 +616,28 @@ Use this checklist during the low-activity production window so the rollout stay
 1. Confirm current traffic is low enough to tolerate a brief lead-flow change window.
 2. Confirm the latest committed branch tip is the one intended for the production cutover.
 3. Confirm `prd` Worker health at `/health`.
-4. Confirm production Cal.com webhook target is `https://ecosystemsca.net/api/cal/webhook`.
+4. Confirm production Cal.com webhook target is `https://prd.ecolanding.workers.dev/api/cal/webhook`.
 5. Confirm `CAL_COM_WEBHOOK_SECRET` is set in the production Worker environment.
 6. Confirm the production Worker code deployed for source `facebook-flat-roof-landing` bypasses Turnstile verification as intended.
 7. Confirm production D1 already has `worker/migrations/0002_cal_booking_confirmations.sql` applied.
 8. Record the current production Pages deployment ID or git commit so rollback is immediate if needed.
+
+## April 6, 2026 Production Webhook Target Decision
+
+### Decision
+
+- Use `https://prd.ecolanding.workers.dev/api/cal/webhook` as the production Cal.com webhook target.
+
+### Why
+
+- Cal.com's webhook endpoint tester reached the production `workers.dev` target successfully.
+- The same tester did not validate the custom-domain production target reliably.
+- The Worker code behind both endpoints is the same production environment, so changing the Cal.com subscriber URL does not require a code change.
+
+### Practical implication
+
+- Keep the public website on `https://ecosystemsca.net`.
+- Use the `prd.ecolanding.workers.dev` hostname only for Cal.com webhook delivery.
 
 ### Freeze scope
 
@@ -906,8 +923,9 @@ Validation status:
 Current state:
 
 - The Worker appends the lead to Google Sheets at lead-submit time and now writes a final `Appointment Scheduled?` column with the default value `No`.
-- Cal.com booking webhooks now update the most recent matching Google Sheets lead row to `Appointment Scheduled? = Yes` or `No` based on the current webhook status.
-- Matching currently uses the submitted lead email address and, when present in the webhook payload, the property address as an additional safeguard.
+- Cal.com booking webhooks now update every recognized appointment-status column on the matching Google Sheets lead row, including both `Appointment Scheduled?` and `Appointment Completed?` when the sheet exposes both headers.
+- Matching still starts with the submitted lead email address and now treats the webhook property address as a soft matcher so formatting differences do not block the row update.
+- If no same-email row matches the webhook address exactly, the Worker now falls back to the most recent same-email lead row instead of leaving the appointment status unchanged.
 
 Files touched for this tracking change:
 
@@ -919,6 +937,36 @@ Validation status:
 
 - Static editor validation passed for `worker/src/index.js` after the Sheets update logic was added.
 - Live webhook-to-Sheets confirmation still depends on one production booking or a signed production webhook test against a spreadsheet that already includes the `Appointment Scheduled?` column header.
+
+## March 30, 2026 Google Sheets Appointment Status Matching Fix
+
+Issue:
+
+- A production booking was confirmed in Cal.com and recorded on the calendar, but the spreadsheet still left the latest lead's appointment-completion field at `No`.
+
+Root cause:
+
+- The Worker only updated one hard-coded Google Sheets header, `Appointment Scheduled?`.
+- The row matcher also treated the Cal.com property address as a strict exact match when the webhook provided one, so a harmless formatting difference could block the update even when the email matched the latest lead row.
+
+Fix:
+
+- The Worker now updates both `Appointment Scheduled?` and `Appointment Completed?` when those headers are present.
+- The Google Sheets row matcher now uses the property address as a soft safeguard and falls back to the latest same-email lead row when Cal.com and the sheet format the address differently.
+
+Files touched:
+
+- `worker/src/index.js`
+- `README.md`
+- `docs/FLAT_ROOF_APPOINTMENT_SCHEDULING_OPTIONS.md`
+
+Validation:
+
+- Static editor validation passed for `worker/src/index.js` after the fix.
+- `node --check worker/src/index.js` completed successfully.
+- Production Worker deploy succeeded after clearing the conflicting `CLOUDFLARE_API_TOKEN` environment variable so Wrangler used the correct authenticated account.
+- Current production Worker version: `6e7c6376-d6f9-4ce4-96ff-754ea073e7fa`.
+- A live production booking or signed production webhook replay is still needed to confirm the corrected sheet columns update in the production spreadsheet.
 
 ## March 30, 2026 Production Worker Deploy For Google Sheets Appointment Status
 

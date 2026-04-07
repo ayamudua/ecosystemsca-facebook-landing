@@ -157,6 +157,37 @@ Implement a minimal static landing page for Facebook traffic that stays visually
 - Added Meta Pixel tracking to the landing page on March 24, 2026 using Pixel ID `1093337934791191`. The static page now loads Meta's standard `fbevents.js` bootstrap in the document head, initializes the configured pixel, and tracks the default `PageView` event. Added Meta's `noscript` image fallback immediately inside the body so basic pageview tracking still fires when JavaScript is disabled.
 - Deployed the Meta Pixel landing-page update to Cloudflare Pages on March 24, 2026 at `https://0b9a18a4.ecosystemsca-facebook-landing.pages.dev`. Verified the new deployment with a direct HTTPS `HEAD` request returning `200 OK`.
 - Validated the Meta Pixel integration on March 24, 2026 by checking the landing markup after the edit and confirming the standard head bootstrap, Pixel ID `1093337934791191`, `PageView` call, and `noscript` fallback are all present in [site/index.html](site/index.html). Also deployed the updated static site to Cloudflare Pages and verified the resulting deployment URL returned `200 OK`. Live Meta Events Manager verification was not run in this session.
+- Performed a live Meta tracking audit on March 31, 2026 against both the reference funnel at `https://ecosystemsca.co/flat-roofs` and the deployed landing page at `https://ecosystemsca.net`. Result: both pages include the standard browser Meta Pixel bootstrap (`connect.facebook.net/en_US/fbevents.js`), Pixel ID `1093337934791191`, and `PageView`, but neither page includes any evidence of Facebook Conversions API wiring. No `graph.facebook.com` calls, no server-side Meta event endpoint usage, and no `_fbp` or `_fbc` handoff logic beyond capturing `fbclid` in the landing-page form payload were found. The current Worker records `fbclid` in downstream lead metadata, but it does not send any server-side Meta conversion events.
+
+## March 31, 2026 Meta Tracking Audit
+
+Issue:
+
+- Needed to verify whether the reference flat-roofs page already used Facebook Conversions API and whether the deployed landing page mirrored that implementation.
+
+Finding:
+
+- The reference page at `https://ecosystemsca.co/flat-roofs` does not expose Facebook Conversions API code in its delivered HTML.
+- The deployed landing page at `https://ecosystemsca.net` also does not expose Facebook Conversions API code in its delivered HTML.
+- Both pages currently run only the browser Meta Pixel and PageView path.
+- In this repository, the frontend captures `fbclid` and the Worker persists that value into lead metadata, CRM notes, and Google Sheets, but the Worker does not post any events to Meta's Graph API.
+
+Files inspected:
+
+- `site/index.html`
+- `site/assets/app.js`
+- `worker/src/index.js`
+- Live HTML from `https://ecosystemsca.co/flat-roofs`
+- Live HTML from `https://ecosystemsca.net`
+
+Validation:
+
+- Inspected the repository source for `fbq`, `fbevents`, `graph.facebook.com`, `_fbp`, `_fbc`, and `fbclid` handling.
+- Pulled live HTML for both public pages and confirmed the delivered markup includes the standard browser Pixel bootstrap only.
+
+Recommended next step:
+
+- If server-side Meta attribution is still desired, implement Facebook Conversions API deliberately as a new tracked feature rather than assuming it already exists on the reference funnel.
 
 ## Google Business Profile OAuth Remediation Notes
 

@@ -12,12 +12,17 @@ const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/sit
 const DEFAULT_LEAD_NOTIFICATION_EMAIL = "infoeco411@gmail.com";
 const DEFAULT_LEAD_NOTIFICATION_FROM_EMAIL = "alerts@ecosystemsca.net";
 const DEFAULT_LEAD_NOTIFICATION_FROM_NAME = "ECO Systems Lead Alerts";
-const DEFAULT_LEAD_NOTIFICATION_SUBJECT_PREFIX = "New ECO Systems lead";
+const DEFAULT_LEAD_NOTIFICATION_SUBJECT_PREFIX = "LA Roof Estimate";
 const CAL_WEBHOOK_SIGNATURE_HEADER = "x-cal-signature-256";
-const GOOGLE_SHEETS_APPOINTMENT_SCHEDULED_COLUMN_HEADER = "Appointment Scheduled?";
+const GOOGLE_SHEETS_APPOINTMENT_STATUS_COLUMN_HEADERS = ["Appointment Scheduled?", "Appointment Completed?"];
+const META_GRAPH_API_VERSION = "v22.0";
+const META_DEFAULT_PIXEL_ID = "1093337934791191";
+const META_LEAD_EVENT_NAME = "Lead";
+const META_SCHEDULE_EVENT_NAME = "Schedule";
+const META_ACTION_SOURCE = "website";
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -56,11 +61,11 @@ export default {
     }
 
     if (request.method === "POST" && url.pathname === "/api/cal/webhook") {
-      return handleCalWebhook(request, env);
+      return handleCalWebhook(request, env, ctx);
     }
 
     if (request.method === "POST" && url.pathname === "/api/lead") {
-      return handleLead(request, env);
+      return handleLead(request, env, ctx);
     }
 
     return json({ ok: false, message: "Not found." }, 404, env);
@@ -71,7 +76,7 @@ export default {
   }
 };
 
-async function handleLead(request, env) {
+async function handleLead(request, env, ctx) {
   const body = await parseJson(request);
   if (!body) {
     return json({ ok: false, message: "Invalid JSON payload." }, 400, env);
@@ -103,11 +108,13 @@ async function handleLead(request, env) {
   let jobNimbusStatus = 0;
   let upstreamMessage = "Lead submitted successfully.";
   let upstreamResponseText = "";
+  let jobNimbusContact = null;
 
   try {
     const response = await submitToJobNimbus(lead, env);
     jobNimbusStatus = response.status;
     upstreamResponseText = await response.text();
+    jobNimbusContact = extractJobNimbusContact(upstreamResponseText);
 
     if (!response.ok) {
       outcome = "failed";
@@ -121,6 +128,14 @@ async function handleLead(request, env) {
     outcome = "failed";
     upstreamMessage = error instanceof Error ? error.message : "JobNimbus request failed.";
     console.error("JobNimbus request exception", error);
+  }
+
+  if (outcome === "success" && jobNimbusContact) {
+    try {
+      await upsertJobNimbusContactLink(env, lead, jobNimbusContact);
+    } catch (error) {
+      console.error("JobNimbus contact-link persistence failed", error);
+    }
   }
 
   try {
@@ -156,6 +171,8 @@ async function handleLead(request, env) {
     );
   }
 
+  dispatchBackgroundWork(ctx, sendMetaLeadEvent(lead, env), "Meta lead event failed");
+
   return json(
     {
       ok: true,
@@ -166,7 +183,7 @@ async function handleLead(request, env) {
   );
 }
 
-async function handleCalWebhook(request, env) {
+async function handleCalWebhook(request, env, ctx) {
   if (!env.REVIEWS_DB) {
     return json({ ok: false, message: "Webhook storage is not configured." }, 503, env);
   }
@@ -212,6 +229,21 @@ async function handleCalWebhook(request, env) {
       bookingUid: booking.bookingUid,
       error: error instanceof Error ? error.message : String(error)
     });
+  }
+
+  if (isConfirmedCalBookingStatus(booking.bookingStatus)) {
+    try {
+      await syncBookingTaskToJobNimbus(booking, env);
+    } catch (error) {
+      console.error("JobNimbus booking task sync failed", {
+        bookingUid: booking.bookingUid,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  if (isConfirmedCalBookingStatus(booking.bookingStatus)) {
+    dispatchBackgroundWork(ctx, sendMetaScheduleEvent(booking, env), "Meta schedule event failed");
   }
 
   return json(
@@ -993,6 +1025,731 @@ function cloneResponseWithContext(response, originalBody) {
   });
 }
 
+function extractJobNimbusContact(responseText) {
+  if (!responseText) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(responseText);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    if (!clean(parsed.jnid)) {
+      return null;
+    }
+
+    return {
+      jnid: clean(parsed.jnid),
+      customerJnid: clean(parsed.customer),
+      number: clean(parsed.number),
+      displayName: clean(parsed.display_name || parsed.name),
+      email: normalizeEmailAddress(parsed.email),
+      address: clean(parsed.address_line1 || parsed.address?.street1),
+      city: clean(parsed.city || parsed.address?.city),
+      state: clean(parsed.state_text || parsed.address?.state),
+      zip: clean(parsed.zip || parsed.address?.zip)
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function upsertJobNimbusContactLink(env, lead, contact) {
+  if (!env.REVIEWS_DB || !clean(contact?.jnid)) {
+    return;
+  }
+
+  const leadEmail = normalizeEmailAddress(lead.contact?.email);
+  if (!leadEmail) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const propertyAddress = clean(lead.property?.fullAddress || buildFullAddress(lead.property));
+
+  await env.REVIEWS_DB.prepare(
+    `INSERT INTO jobnimbus_contact_links (
+      lead_email,
+      property_address,
+      customer_jnid,
+      contact_jnid,
+      contact_number,
+      contact_display_name,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(lead_email, contact_jnid) DO UPDATE SET
+      property_address = excluded.property_address,
+      customer_jnid = excluded.customer_jnid,
+      contact_number = excluded.contact_number,
+      contact_display_name = excluded.contact_display_name,
+      updated_at = excluded.updated_at`
+  )
+    .bind(leadEmail, propertyAddress, contact.customerJnid, contact.jnid, contact.number, contact.displayName, now, now)
+    .run();
+}
+
+async function syncBookingTaskToJobNimbus(booking, env) {
+  if (!env.JOBNIMBUS_API_KEY) {
+    return;
+  }
+
+  const preparedRecord = await prepareJobNimbusBookingTaskRecord(env, booking);
+  if (!preparedRecord.shouldSend) {
+    return;
+  }
+
+  const contact = await resolveJobNimbusContactForBooking(booking, env);
+  if (!contact?.jnid || !contact.customerJnid) {
+    if (preparedRecord.rowId) {
+      await finalizeJobNimbusBookingTaskRecord(env, preparedRecord.rowId, {
+        contactJnid: "",
+        taskJnid: "",
+        deliveryStatus: "failed",
+        responseStatus: 0,
+        responseBody: "No matching JobNimbus contact/customer record found for booking email."
+      });
+    }
+    return;
+  }
+
+  const response = await postJobNimbusBookingTask(contact, booking, env);
+  const responseText = await response.text();
+  const createdTask = extractJobNimbusTask(responseText);
+
+  if (preparedRecord.rowId) {
+    await finalizeJobNimbusBookingTaskRecord(env, preparedRecord.rowId, {
+      contactJnid: contact.jnid,
+      taskJnid: createdTask?.jnid || "",
+      deliveryStatus: response.ok ? "success" : "failed",
+      responseStatus: response.status,
+      responseBody: truncateText(responseText, 2000)
+    });
+  }
+
+  if (!response.ok) {
+    throw new Error(`JobNimbus booking task request failed with status ${response.status}: ${truncateText(responseText, 2000)}`);
+  }
+}
+
+async function prepareJobNimbusBookingTaskRecord(env, booking) {
+  if (!env.REVIEWS_DB) {
+    return {
+      shouldSend: true,
+      rowId: 0
+    };
+  }
+
+  const existing = await env.REVIEWS_DB.prepare(
+    `SELECT id, delivery_status
+    FROM jobnimbus_booking_tasks
+    WHERE booking_uid = ?
+    LIMIT 1`
+  )
+    .bind(booking.bookingUid)
+    .first();
+
+  if (existing?.delivery_status === "success") {
+    return {
+      shouldSend: false,
+      rowId: Number(existing.id || 0)
+    };
+  }
+
+  const now = new Date().toISOString();
+
+  if (existing?.id) {
+    await env.REVIEWS_DB.prepare(
+      `UPDATE jobnimbus_booking_tasks
+      SET booking_status = ?,
+          contact_jnid = NULL,
+          task_jnid = NULL,
+          delivery_status = 'pending',
+          response_status = NULL,
+          response_body = NULL,
+          updated_at = ?
+      WHERE id = ?`
+    )
+      .bind(booking.bookingStatus, now, existing.id)
+      .run();
+
+    return {
+      shouldSend: true,
+      rowId: Number(existing.id || 0)
+    };
+  }
+
+  const result = await env.REVIEWS_DB.prepare(
+    `INSERT INTO jobnimbus_booking_tasks (
+      booking_uid,
+      booking_status,
+      delivery_status,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, 'pending', ?, ?)`
+  )
+    .bind(booking.bookingUid, booking.bookingStatus, now, now)
+    .run();
+
+  return {
+    shouldSend: true,
+    rowId: Number(result?.meta?.last_row_id || 0)
+  };
+}
+
+async function finalizeJobNimbusBookingTaskRecord(env, rowId, details) {
+  if (!env.REVIEWS_DB || !rowId) {
+    return;
+  }
+
+  await env.REVIEWS_DB.prepare(
+    `UPDATE jobnimbus_booking_tasks
+    SET contact_jnid = ?,
+        task_jnid = ?,
+        delivery_status = ?,
+        response_status = ?,
+        response_body = ?,
+        updated_at = ?
+    WHERE id = ?`
+  )
+    .bind(
+      details.contactJnid,
+      details.taskJnid,
+      details.deliveryStatus,
+      details.responseStatus,
+      details.responseBody,
+      new Date().toISOString(),
+      rowId
+    )
+    .run();
+}
+
+async function resolveJobNimbusContactForBooking(booking, env) {
+  const storedContact = await findStoredJobNimbusContactLink(booking, env);
+  if (storedContact?.jnid && storedContact.customerJnid) {
+    return storedContact;
+  }
+
+  const contact = await findJobNimbusContactByEmail(booking, env);
+  if (contact?.jnid && env.REVIEWS_DB) {
+    const pseudoLead = {
+      contact: { email: booking.bookerEmail },
+      property: {
+        fullAddress: booking.propertyAddress,
+        address: booking.propertyAddress,
+        city: "",
+        state: "",
+        zip: ""
+      }
+    };
+    await upsertJobNimbusContactLink(env, pseudoLead, contact);
+  }
+
+  return contact;
+}
+
+async function findStoredJobNimbusContactLink(booking, env) {
+  if (!env.REVIEWS_DB || !booking.bookerEmail) {
+    return null;
+  }
+
+  const rows = await env.REVIEWS_DB.prepare(
+    `SELECT contact_jnid, customer_jnid, contact_number, contact_display_name, property_address
+    FROM jobnimbus_contact_links
+    WHERE lead_email = ?
+    ORDER BY updated_at DESC
+    LIMIT 10`
+  )
+    .bind(booking.bookerEmail)
+    .all();
+
+  const candidates = Array.isArray(rows?.results) ? rows.results : [];
+  if (!candidates.length) {
+    return null;
+  }
+
+  const matched = candidates.find((candidate) =>
+    booking.propertyAddress && doAddressesLikelyMatch(booking.propertyAddress, candidate.property_address)
+  );
+  const selected = matched || candidates[0];
+
+  return selected
+    ? {
+        jnid: clean(selected.contact_jnid),
+        customerJnid: clean(selected.customer_jnid),
+        number: clean(selected.contact_number),
+        displayName: clean(selected.contact_display_name)
+      }
+    : null;
+}
+
+async function findJobNimbusContactByEmail(booking, env) {
+  if (!booking.bookerEmail || !env.JOBNIMBUS_API_KEY) {
+    return null;
+  }
+
+  const baseUrl = (env.JOBNIMBUS_API_BASE_URL || "https://app.jobnimbus.com").replace(/\/$/, "");
+  const lookupUrl = new URL(`${baseUrl}/api1/contacts`);
+  lookupUrl.searchParams.set("size", "10");
+  lookupUrl.searchParams.set("email", booking.bookerEmail);
+
+  const response = await fetch(lookupUrl.toString(), {
+    headers: {
+      Authorization: `Bearer ${env.JOBNIMBUS_API_KEY}`,
+      Accept: "application/json"
+    }
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`JobNimbus contact lookup failed with status ${response.status}: ${truncateText(detail, 2000)}`);
+  }
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    return null;
+  }
+
+  const candidates = Array.isArray(payload?.results) ? payload.results : [];
+  if (!candidates.length) {
+    return null;
+  }
+
+  const matched = candidates.find((candidate) =>
+    booking.propertyAddress &&
+    (doAddressesLikelyMatch(booking.propertyAddress, candidate.address_line1) ||
+      doAddressesLikelyMatch(booking.propertyAddress, buildJobNimbusCandidateAddress(candidate)))
+  );
+
+  const selected = matched || candidates[0];
+  return selected
+    ? {
+        jnid: clean(selected.jnid),
+        customerJnid: clean(selected.customer),
+        number: clean(selected.number),
+        displayName: clean(selected.display_name),
+        email: normalizeEmailAddress(selected.email),
+        address: clean(selected.address_line1),
+        city: clean(selected.city),
+        state: clean(selected.state_text),
+        zip: clean(selected.zip)
+      }
+    : null;
+}
+
+function buildJobNimbusCandidateAddress(candidate) {
+  return [clean(candidate.address_line1), clean(candidate.city), clean(candidate.state_text), clean(candidate.zip)]
+    .filter(Boolean)
+    .join(", ");
+}
+
+async function postJobNimbusBookingTask(contact, booking, env) {
+  const baseUrl = (env.JOBNIMBUS_API_BASE_URL || "https://app.jobnimbus.com").replace(/\/$/, "");
+  const url = `${baseUrl}/api1/tasks`;
+  const payload = buildJobNimbusBookingTaskPayload(contact, booking, env);
+
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.JOBNIMBUS_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+function buildJobNimbusBookingTaskPayload(contact, booking, env) {
+  const descriptionLines = [
+    `Cal.com appointment ${booking.bookingStatus}.`,
+    booking.eventTitle ? `Event: ${booking.eventTitle}` : null,
+    booking.startTime ? `Start: ${booking.startTime}` : null,
+    booking.endTime ? `End: ${booking.endTime}` : null,
+    booking.propertyAddress ? `Property address: ${booking.propertyAddress}` : null,
+    booking.bookerName ? `Booked by: ${booking.bookerName}` : null,
+    booking.bookerEmail ? `Email: ${booking.bookerEmail}` : null,
+    booking.bookerPhone ? `Phone: ${booking.bookerPhone}` : null,
+    booking.bookingUid ? `Cal.com booking uid: ${booking.bookingUid}` : null
+  ].filter(Boolean);
+
+  const title = clean(env.JOBNIMBUS_BOOKING_TASK_TITLE) || "Initial Appointment";
+  const recordTypeName = clean(env.JOBNIMBUS_BOOKING_TASK_TYPE) || "Initial Appointment";
+  const dateStart = toUnixTimestamp(booking.startTime || booking.bookingCreatedAt || booking.webhookCreatedAt);
+  const dateEnd = booking.endTime ? toUnixTimestamp(booking.endTime) : 0;
+
+  const linkedContact = {
+    id: contact.jnid,
+    type: "contact",
+    name: contact.displayName || booking.bookerName || booking.bookerEmail || "Booked contact"
+  };
+
+  if (contact.number) {
+    linkedContact.number = contact.number;
+  }
+
+  const payload = {
+    title,
+    customer: contact.customerJnid,
+    date_start: dateStart,
+    all_day: false,
+    record_type_name: recordTypeName,
+    related: [linkedContact],
+    description: descriptionLines.join("\n")
+  };
+
+  if (dateEnd > dateStart) {
+    payload.date_end = dateEnd;
+  }
+
+  return payload;
+}
+
+function extractJobNimbusTask(responseText) {
+  if (!responseText) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(responseText);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    return {
+      jnid: clean(parsed.jnid),
+      title: clean(parsed.title),
+      recordTypeName: clean(parsed.record_type_name)
+    };
+  } catch {
+    return null;
+  }
+}
+
+function dispatchBackgroundWork(ctx, promise, label) {
+  if (!promise || typeof promise.then !== "function") {
+    return;
+  }
+
+  const guardedPromise = promise.catch((error) => {
+    console.error(label, error);
+  });
+
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(guardedPromise);
+    return;
+  }
+
+  return guardedPromise;
+}
+
+async function sendMetaLeadEvent(lead, env) {
+  if (!hasMetaConversionsConfig(env)) {
+    return;
+  }
+
+  const eventId = clean(lead.tracking.leadEventId) || `lead-${crypto.randomUUID()}`;
+  const requestBody = {
+    data: [
+      {
+        event_name: META_LEAD_EVENT_NAME,
+        event_time: toUnixTimestamp(lead.meta.submittedAt),
+        event_id: eventId,
+        action_source: META_ACTION_SOURCE,
+        event_source_url: clean(lead.meta.pageUrl) || buildSiteUrl(env, "/"),
+        user_data: await buildMetaUserData({
+          email: lead.contact.email,
+          phone: lead.contact.phone,
+          city: lead.property.city,
+          state: lead.property.state,
+          zip: lead.property.zip,
+          country: "US",
+          fbc: lead.tracking.fbc,
+          fbp: lead.tracking.fbp,
+          clientIpAddress: lead.meta.ipAddress,
+          clientUserAgent: lead.meta.userAgent
+        }),
+        custom_data: {
+          content_name: "Flat Roof Lead",
+          currency: "USD",
+          value: 1
+        }
+      }
+    ]
+  };
+
+  await postMetaConversionsEvent(env, requestBody, {
+    sourceType: "lead",
+    sourceKey: eventId,
+    eventName: META_LEAD_EVENT_NAME,
+    metaEventId: eventId
+  });
+}
+
+async function sendMetaScheduleEvent(booking, env) {
+  if (!hasMetaConversionsConfig(env)) {
+    return;
+  }
+
+  const eventId = `${booking.bookingUid}:schedule`;
+  const requestBody = {
+    data: [
+      {
+        event_name: META_SCHEDULE_EVENT_NAME,
+        event_time: toUnixTimestamp(booking.bookingCreatedAt || booking.webhookCreatedAt),
+        event_id: eventId,
+        action_source: META_ACTION_SOURCE,
+        event_source_url: buildSiteUrl(env, "/schedule.html"),
+        user_data: await buildMetaUserData({
+          email: booking.bookerEmail,
+          phone: booking.bookerPhone,
+          country: "US"
+        }),
+        custom_data: {
+          content_name: "Roof Inspection Scheduled"
+        }
+      }
+    ]
+  };
+
+  await postMetaConversionsEvent(env, requestBody, {
+    sourceType: "booking",
+    sourceKey: booking.bookingUid,
+    eventName: META_SCHEDULE_EVENT_NAME,
+    metaEventId: eventId
+  });
+}
+
+function hasMetaConversionsConfig(env) {
+  return Boolean(clean(env.META_CONVERSIONS_API_TOKEN) && clean(env.META_PIXEL_ID || META_DEFAULT_PIXEL_ID));
+}
+
+async function postMetaConversionsEvent(env, requestBody, eventRecord) {
+  const preparedRecord = await prepareMetaConversionEventRecord(env, eventRecord);
+
+  if (!preparedRecord.shouldSend) {
+    return;
+  }
+
+  const pixelId = clean(env.META_PIXEL_ID || META_DEFAULT_PIXEL_ID);
+  const accessToken = clean(env.META_CONVERSIONS_API_TOKEN);
+  const url = `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${pixelId}/events`;
+  const payload = {
+    ...requestBody,
+    access_token: accessToken
+  };
+
+  if (clean(env.META_TEST_EVENT_CODE)) {
+    payload.test_event_code = clean(env.META_TEST_EVENT_CODE);
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const responseText = await response.text();
+
+  if (preparedRecord.rowId) {
+    await finalizeMetaConversionEventRecord(env, preparedRecord.rowId, {
+      deliveryStatus: response.ok ? "success" : "failed",
+      responseStatus: response.status,
+      responseBody: truncateText(responseText, 2000)
+    });
+  }
+
+  if (!response.ok) {
+    throw new Error(`Meta Conversions API request failed with status ${response.status}: ${truncateText(responseText, 2000)}`);
+  }
+
+  console.log("Meta conversion event sent", {
+    eventName: eventRecord.eventName,
+    sourceType: eventRecord.sourceType,
+    sourceKey: eventRecord.sourceKey,
+    responseStatus: response.status
+  });
+}
+
+async function prepareMetaConversionEventRecord(env, eventRecord) {
+  if (!env.REVIEWS_DB) {
+    return {
+      shouldSend: true,
+      rowId: 0
+    };
+  }
+
+  const existing = await env.REVIEWS_DB.prepare(
+    `SELECT id, delivery_status
+    FROM meta_conversion_events
+    WHERE source_type = ? AND source_key = ? AND event_name = ?
+    LIMIT 1`
+  )
+    .bind(eventRecord.sourceType, eventRecord.sourceKey, eventRecord.eventName)
+    .first();
+
+  if (existing?.delivery_status === "success") {
+    return {
+      shouldSend: false,
+      rowId: Number(existing.id || 0)
+    };
+  }
+
+  const now = new Date().toISOString();
+
+  if (existing?.id) {
+    await env.REVIEWS_DB.prepare(
+      `UPDATE meta_conversion_events
+      SET meta_event_id = ?,
+          delivery_status = 'pending',
+          response_status = NULL,
+          response_body = NULL,
+          updated_at = ?
+      WHERE id = ?`
+    )
+      .bind(eventRecord.metaEventId, now, existing.id)
+      .run();
+
+    return {
+      shouldSend: true,
+      rowId: Number(existing.id || 0)
+    };
+  }
+
+  const result = await env.REVIEWS_DB.prepare(
+    `INSERT INTO meta_conversion_events (
+      source_type,
+      source_key,
+      event_name,
+      meta_event_id,
+      delivery_status,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, 'pending', ?, ?)`
+  )
+    .bind(eventRecord.sourceType, eventRecord.sourceKey, eventRecord.eventName, eventRecord.metaEventId, now, now)
+    .run();
+
+  return {
+    shouldSend: true,
+    rowId: Number(result?.meta?.last_row_id || 0)
+  };
+}
+
+async function finalizeMetaConversionEventRecord(env, rowId, details) {
+  if (!env.REVIEWS_DB || !rowId) {
+    return;
+  }
+
+  await env.REVIEWS_DB.prepare(
+    `UPDATE meta_conversion_events
+    SET delivery_status = ?,
+        response_status = ?,
+        response_body = ?,
+        updated_at = ?
+    WHERE id = ?`
+  )
+    .bind(details.deliveryStatus, details.responseStatus, details.responseBody, new Date().toISOString(), rowId)
+    .run();
+}
+
+async function buildMetaUserData(details) {
+  const userData = {
+    client_ip_address: clean(details.clientIpAddress),
+    client_user_agent: clean(details.clientUserAgent),
+    fbc: clean(details.fbc),
+    fbp: clean(details.fbp)
+  };
+  const hashedEmail = await hashMetaValue(normalizeEmailAddress(details.email));
+  const hashedPhone = await hashMetaValue(normalizePhoneForMeta(details.phone));
+  const hashedCity = await hashMetaValue(normalizeMetaText(details.city));
+  const hashedState = await hashMetaValue(normalizeMetaText(details.state));
+  const hashedZip = await hashMetaValue(normalizeMetaZip(details.zip));
+  const hashedCountry = await hashMetaValue(normalizeMetaCountry(details.country));
+
+  if (hashedEmail) {
+    userData.em = [hashedEmail];
+  }
+
+  if (hashedPhone) {
+    userData.ph = [hashedPhone];
+  }
+
+  if (hashedCity) {
+    userData.ct = [hashedCity];
+  }
+
+  if (hashedState) {
+    userData.st = [hashedState];
+  }
+
+  if (hashedZip) {
+    userData.zp = [hashedZip];
+  }
+
+  if (hashedCountry) {
+    userData.country = [hashedCountry];
+  }
+
+  return Object.fromEntries(
+    Object.entries(userData).filter(([, value]) => Boolean(value && (!Array.isArray(value) || value.length)))
+  );
+}
+
+async function hashMetaValue(value) {
+  const normalizedValue = clean(value);
+
+  if (!normalizedValue) {
+    return "";
+  }
+
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalizedValue));
+  return bytesToHex(new Uint8Array(digest));
+}
+
+function normalizePhoneForMeta(value) {
+  const digits = String(value || "").replace(/\D+/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  if (digits.length === 10) {
+    return `1${digits}`;
+  }
+
+  return digits;
+}
+
+function normalizeMetaText(value) {
+  return clean(value).toLowerCase();
+}
+
+function normalizeMetaZip(value) {
+  return String(value || "").replace(/\D+/g, "");
+}
+
+function normalizeMetaCountry(value) {
+  return clean(value).toLowerCase();
+}
+
+function toUnixTimestamp(value) {
+  const timestamp = Date.parse(value || "");
+  return Number.isFinite(timestamp) ? Math.floor(timestamp / 1000) : Math.floor(Date.now() / 1000);
+}
+
+function buildSiteUrl(env, pathName = "/") {
+  const siteOrigin = clean(env.SITE_ORIGIN || "https://ecosystemsca.net");
+  const normalizedOrigin = siteOrigin.endsWith("/") ? siteOrigin.slice(0, -1) : siteOrigin;
+  const normalizedPath = pathName.startsWith("/") ? pathName : `/${pathName}`;
+
+  return `${normalizedOrigin}${normalizedPath}`;
+}
+
 function buildJobNimbusPayload(lead, env) {
   const resourcePath = (env.JOBNIMBUS_RESOURCE_PATH || "api1/contacts").toLowerCase();
 
@@ -1179,44 +1936,61 @@ async function updateAppointmentScheduledInGoogleSheets(booking, env) {
     return;
   }
 
-  const appointmentColumnIndex = resolveAppointmentScheduledColumnIndex(rows[0]);
+  const appointmentColumnIndexes = resolveAppointmentStatusColumnIndexes(rows[0]);
   const matchingRowNumber = findMatchingLeadRowNumber(rows, {
     email: bookerEmail,
     propertyAddress: booking.propertyAddress
   });
 
-  if (!matchingRowNumber) {
+  if (!matchingRowNumber || !appointmentColumnIndexes.length) {
     return;
   }
 
-  const writeRange = encodeURIComponent(`${sheetName}!${toSheetColumnLetter(appointmentColumnIndex + 1)}${matchingRowNumber}`);
-  const writeResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${env.GOOGLE_SHEETS_SPREADSHEET_ID}/values/${writeRange}?valueInputOption=USER_ENTERED`,
-    {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ values: [[appointmentScheduledValue]] })
-    }
-  );
+  for (const appointmentColumnIndex of appointmentColumnIndexes) {
+    const writeRange = encodeURIComponent(
+      `${sheetName}!${toSheetColumnLetter(appointmentColumnIndex + 1)}${matchingRowNumber}`
+    );
+    const writeResponse = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${env.GOOGLE_SHEETS_SPREADSHEET_ID}/values/${writeRange}?valueInputOption=USER_ENTERED`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ values: [[appointmentScheduledValue]] })
+      }
+    );
 
-  if (!writeResponse.ok) {
-    const detail = await writeResponse.text();
-    throw new Error(`Google Sheets update failed with status ${writeResponse.status}: ${truncateText(detail, 2000)}`);
+    if (!writeResponse.ok) {
+      const detail = await writeResponse.text();
+      throw new Error(`Google Sheets update failed with status ${writeResponse.status}: ${truncateText(detail, 2000)}`);
+    }
   }
 }
 
-function resolveAppointmentScheduledColumnIndex(headerRow) {
-  const headerIndex = headerRow.findIndex(
-    (value) => clean(value).toLowerCase() === GOOGLE_SHEETS_APPOINTMENT_SCHEDULED_COLUMN_HEADER.toLowerCase()
-  );
+function resolveAppointmentStatusColumnIndexes(headerRow) {
+  if (!Array.isArray(headerRow) || !headerRow.length) {
+    return [28];
+  }
 
-  return headerIndex >= 0 ? headerIndex : 28;
+  const normalizedTargets = new Set(
+    GOOGLE_SHEETS_APPOINTMENT_STATUS_COLUMN_HEADERS.map((header) => normalizeSheetHeaderLabel(header))
+  );
+  const indexes = [];
+
+  headerRow.forEach((value, index) => {
+    if (normalizedTargets.has(normalizeSheetHeaderLabel(value))) {
+      indexes.push(index);
+    }
+  });
+
+  return indexes.length ? indexes : [28];
 }
 
 function findMatchingLeadRowNumber(rows, criteria) {
+  const candidateRowNumbers = [];
+
   for (let index = rows.length - 1; index >= 1; index -= 1) {
     const row = rows[index] || [];
     const email = normalizeEmailAddress(row[7]);
@@ -1224,23 +1998,47 @@ function findMatchingLeadRowNumber(rows, criteria) {
       continue;
     }
 
-    if (criteria.propertyAddress) {
-      const address = clean(row[8]);
-      const fullAddress = clean(row[12]);
-      const normalizedPropertyAddress = clean(criteria.propertyAddress);
-      if (
-        normalizedPropertyAddress &&
-        address !== normalizedPropertyAddress &&
-        fullAddress !== normalizedPropertyAddress
-      ) {
-        continue;
-      }
+    candidateRowNumbers.push(index + 1);
+
+    if (!criteria.propertyAddress) {
+      return index + 1;
     }
 
-    return index + 1;
+    if (
+      doAddressesLikelyMatch(criteria.propertyAddress, row[8]) ||
+      doAddressesLikelyMatch(criteria.propertyAddress, row[12])
+    ) {
+      return index + 1;
+    }
   }
 
-  return 0;
+  return candidateRowNumbers[0] || 0;
+}
+
+function normalizeSheetHeaderLabel(value) {
+  return clean(value).toLowerCase();
+}
+
+function doAddressesLikelyMatch(left, right) {
+  const normalizedLeft = normalizeAddressForMatching(left);
+  const normalizedRight = normalizeAddressForMatching(right);
+
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
+  return (
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.includes(normalizedRight) ||
+    normalizedRight.includes(normalizedLeft)
+  );
+}
+
+function normalizeAddressForMatching(value) {
+  return clean(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .trim();
 }
 
 function toSheetColumnLetter(columnNumber) {
@@ -1563,32 +2361,27 @@ function shouldBypassTurnstileVerification(body, request) {
 }
 
 function buildLeadNotificationSubject(lead, env, result, subjectPrefix) {
-  const label = result.outcome === "failed" ? "FAILED" : "SUCCESS";
   const contactName = clean(lead.contact.fullName || `${lead.contact.firstName} ${lead.contact.lastName}`) || "Unknown lead";
-  const city = clean(lead.property.city);
-  const state = clean(lead.property.state);
-  const location = [city, state].filter(Boolean).join(", ");
-  const environmentName = clean(env.JOBNIMBUS_SOURCE);
-  const suffix = [contactName, location].filter(Boolean).join(" - ");
+  const phoneNumber = clean(lead.contact.phone) || "-";
+  const propertyAddress = clean(lead.property.fullAddress) || buildFullAddress(lead.property) || "Unknown address";
 
-  return [subjectPrefix, label, environmentName || null, suffix || null].filter(Boolean).join(" | ");
+  return [subjectPrefix || DEFAULT_LEAD_NOTIFICATION_SUBJECT_PREFIX, contactName, phoneNumber, propertyAddress]
+    .filter(Boolean)
+    .join(" - ");
 }
 
 function buildLeadNotificationText(lead, env, result) {
   const contactName = clean(lead.contact.fullName || `${lead.contact.firstName} ${lead.contact.lastName}`) || "Unknown";
+  const phoneNumber = clean(lead.contact.phone) || "-";
   const propertyAddress = clean(lead.property.fullAddress) || buildFullAddress(lead.property) || "Unknown";
   const mapsUrl = buildGoogleMapsUrl(propertyAddress);
   const lines = [
-    "New ECO Systems lead received.",
+    DEFAULT_LEAD_NOTIFICATION_SUBJECT_PREFIX,
     "",
-    `Name: ${contactName}`,
-    `Phone: ${lead.contact.phone || "-"}`,
-    `Email: ${lead.contact.email || "-"}`,
-    `Address: ${propertyAddress}`,
-    mapsUrl ? `Map: ${mapsUrl}` : null,
-    lead.property.county ? `County: ${lead.property.county}` : null,
-    `Submitted at: ${lead.meta.submittedAt || new Date().toISOString()}`,
-    `Lead source: ${env.JOBNIMBUS_SOURCE || lead.meta.source || "Facebook Flat Roof Landing"}`
+    contactName,
+    phoneNumber,
+    propertyAddress,
+    mapsUrl ? `Map: ${mapsUrl}` : null
   ].filter(Boolean);
 
   if (result.outcome === "failed") {
@@ -1605,27 +2398,19 @@ function buildLeadNotificationText(lead, env, result) {
 
 function buildLeadNotificationHtml(lead, env, result) {
   const contactName = clean(lead.contact.fullName || `${lead.contact.firstName} ${lead.contact.lastName}`) || "Unknown";
+  const phoneNumber = clean(lead.contact.phone) || "-";
   const propertyAddress = clean(lead.property.fullAddress) || buildFullAddress(lead.property) || "Unknown";
   const mapsUrl = buildGoogleMapsUrl(propertyAddress);
-  const submittedAt = lead.meta.submittedAt || new Date().toISOString();
-  const source = env.JOBNIMBUS_SOURCE || lead.meta.source || "Facebook Flat Roof Landing";
   const rows = [
-    buildLeadNotificationDetailRow("Name", escapeHtml(contactName)),
+    buildLeadNotificationDetailRow("", escapeHtml(contactName)),
     buildLeadNotificationDetailRow(
-      "Phone",
-      lead.contact.phone ? buildHtmlLink(`tel:${lead.contact.phone}`, escapeHtml(lead.contact.phone), true) : escapeHtml("-")
+      "",
+      lead.contact.phone ? buildHtmlLink(`tel:${lead.contact.phone}`, escapeHtml(phoneNumber), true) : escapeHtml(phoneNumber)
     ),
     buildLeadNotificationDetailRow(
-      "Email",
-      lead.contact.email ? buildHtmlLink(`mailto:${lead.contact.email}`, escapeHtml(lead.contact.email), true) : escapeHtml("-")
-    ),
-    buildLeadNotificationDetailRow(
-      "Address",
+      "",
       mapsUrl ? buildHtmlLink(mapsUrl, escapeHtml(propertyAddress), true) : escapeHtml(propertyAddress)
-    ),
-    lead.property.county ? buildLeadNotificationDetailRow("County", escapeHtml(lead.property.county)) : "",
-    buildLeadNotificationDetailRow("Submitted at", escapeHtml(submittedAt)),
-    buildLeadNotificationDetailRow("Lead source", escapeHtml(source))
+    )
   ].filter(Boolean);
 
   const failureNotice =
@@ -1640,7 +2425,7 @@ function buildLeadNotificationHtml(lead, env, result) {
     '<html lang="en">',
     '<body style="margin:0;padding:24px;background:#f5f2ea;font-family:Arial,sans-serif;color:#1f2937;">',
     '<div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;">',
-    '<h1 style="margin:0 0 16px;font-size:24px;line-height:1.2;color:#111827;">New ECO Systems lead received</h1>',
+    '<h1 style="margin:0 0 16px;font-size:24px;line-height:1.2;color:#111827;">LA Roof Estimate</h1>',
     failureNotice,
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">',
     rows.join(""),
@@ -1867,7 +2652,10 @@ function normalizeLead(body, request) {
       utmMedium: clean(body.tracking?.utmMedium),
       utmCampaign: clean(body.tracking?.utmCampaign),
       utmContent: clean(body.tracking?.utmContent),
-      fbclid: clean(body.tracking?.fbclid)
+      fbclid: clean(body.tracking?.fbclid),
+      fbp: clean(body.tracking?.fbp),
+      fbc: clean(body.tracking?.fbc),
+      leadEventId: clean(body.tracking?.leadEventId)
     },
     meta: {
       source: clean(body.meta?.source || "facebook-flat-roof-landing"),

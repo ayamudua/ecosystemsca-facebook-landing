@@ -6,7 +6,14 @@ Minimal static landing page plus Cloudflare Worker for a flat-roof Facebook camp
 
 - `site/` static landing page files
 - `worker/` Cloudflare Worker for lead submission, Google review retrieval, and Google Sheets logging
-- `docs/` planning and implementation notes
+- `docs/` planning notes, durable feature docs, and dated session records
+
+Documentation convention:
+
+- Durable topic docs stay in `docs/` at the root when they describe an ongoing feature, plan, or runbook.
+- Every working session must also be recorded independently in its own file under `docs/<YYYY-MM-DD>/` for that work date.
+- Session files should reference related durable docs when needed instead of appending every update into a single long-running file.
+- See `docs/README.md` for the repo documentation layout.
 
 ## What is implemented
 
@@ -15,6 +22,8 @@ Minimal static landing page plus Cloudflare Worker for a flat-roof Facebook camp
 - Integrated post-submit scheduling flow on the production landing page with Cal.com prefill values generated from the submitted lead data
 - Dedicated first-party post-booking follow-up page for completed appointments
 - Worker endpoint that validates the form, forwards the lead to JobNimbus, logs every attempt to Google Sheets, and sends an owner notification email for each completed submission attempt
+- Worker webhook path that now mirrors confirmed Cal.com bookings into JobNimbus `Initial Appointment` tasks for appointment follow-up automation
+- Browser Meta Pixel tracking plus Worker-side Meta Conversions API support for deduped `Lead` events and server-side `Schedule` events
 - Worker endpoint that fetches Google review highlights from the Places API and returns a normalized carousel payload
 - D1-backed review archive endpoints that can serve a fuller synced Google Business Profile archive plus owner responses
 - Protected admin sync endpoint and scheduled sync hook for archived Google Business Profile reviews
@@ -43,7 +52,7 @@ Current deployed endpoints:
 
 - Production Worker preview: `https://prd.ecolanding.workers.dev`
 - Development Worker: `https://devmt.ecolanding.workers.dev`
-- Current production Pages deployment: `https://0b9a18a4.ecosystemsca-facebook-landing.pages.dev`
+- Current production Pages deployment: `https://4638b0c7.ecosystemsca-facebook-landing.pages.dev`
 
 Wrangler commands:
 
@@ -131,7 +140,9 @@ Suggested header row for the sheet:
 Current state:
 
 - The Worker appends the initial lead row to Google Sheets at lead-submit time and writes `Appointment Scheduled? = No` in the final column.
-- Cal.com booking webhooks now update the most recent matching lead row in Google Sheets to `Appointment Scheduled? = Yes` for confirmed bookings and `No` for non-confirmed booking states, using the submitted email address, with property address used as an additional matcher when it is available.
+- Cal.com booking webhooks now update every recognized appointment-status column in the matching lead row, including `Appointment Scheduled?` and `Appointment Completed?` when both exist.
+- Matching still starts with the submitted email address, but address comparison is now tolerant of Cal.com formatting differences and falls back to the most recent same-email lead row when the webhook address string does not match the sheet exactly.
+- Confirmed Cal.com booking webhooks now also create one JobNimbus `Initial Appointment` task per accepted or rescheduled booking when the linked contact can be resolved.
 - Address autocomplete has been deferred and remains a future todo.
 
 ## Cloudflare Turnstile setup
@@ -188,9 +199,13 @@ Recommended webhook setup:
 2. Create a webhook subscription for at least `Booking Created`.
 3. Set the subscriber URL to the correct Worker environment endpoint:
 	- development: `https://devmt.ecolanding.workers.dev/api/cal/webhook`
-	- production: `https://ecosystemsca.net/api/cal/webhook`
+	- production: `https://prd.ecolanding.workers.dev/api/cal/webhook`
 4. Set a secret in Cal.com and store the same value in the Worker as `CAL_COM_WEBHOOK_SECRET`.
 5. Apply the D1 migration `worker/migrations/0002_cal_booking_confirmations.sql` before testing the webhook-backed booking-status flow.
+
+Operational note:
+
+- As of April 6, 2026, Cal.com's webhook tester reached the production `workers.dev` endpoint successfully while the custom-domain production webhook target did not pass Cal.com's reachability test. Use the `prd.ecolanding.workers.dev` webhook URL for Cal.com production webhook delivery unless and until the custom-domain behavior is validated from Cal.com's side.
 
 Prototype fallback behavior:
 

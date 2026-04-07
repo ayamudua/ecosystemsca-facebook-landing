@@ -29,6 +29,8 @@ allowed_sender_addresses = ["alerts@ecosystemsca.net"]
 
 [env.prd.vars]
 JOBNIMBUS_API_BASE_URL = "https://app.jobnimbus.com"
+JOBNIMBUS_BOOKING_TASK_TITLE = "Initial Appointment"
+JOBNIMBUS_BOOKING_TASK_TYPE = "Initial Appointment"
 JOBNIMBUS_RESOURCE_PATH = "api1/contacts"
 JOBNIMBUS_RECORD_TYPE = "lead"
 JOBNIMBUS_SOURCE = "Facebook Flat Roof Landing"
@@ -41,6 +43,8 @@ LEAD_NOTIFICATION_EMAIL_FROM_NAME = "ECO Systems Lead Alerts"
 ALLOWED_ORIGIN = "https://ecosystemsca.net"
 CACHE_TTL_SECONDS = "21600"
 REVIEW_ARCHIVE_CACHE_TTL_SECONDS = "900"
+META_PIXEL_ID = "1093337934791191"
+SITE_ORIGIN = "https://ecosystemsca.net"
 
 [env.devmt]
 name = "devmt"
@@ -58,6 +62,8 @@ allowed_sender_addresses = ["alerts@ecosystemsca.net"]
 
 [env.devmt.vars]
 JOBNIMBUS_API_BASE_URL = "https://app.jobnimbus.com"
+JOBNIMBUS_BOOKING_TASK_TITLE = "Initial Appointment"
+JOBNIMBUS_BOOKING_TASK_TYPE = "Initial Appointment"
 JOBNIMBUS_RESOURCE_PATH = "api1/contacts"
 JOBNIMBUS_RECORD_TYPE = "lead"
 JOBNIMBUS_SOURCE = "Facebook Flat Roof Landing - DEVMT"
@@ -70,3 +76,5 @@ LEAD_NOTIFICATION_EMAIL_FROM_NAME = "ECO Systems Lead Alerts"
 ALLOWED_ORIGIN = "*"
 CACHE_TTL_SECONDS = "300"
 REVIEW_ARCHIVE_CACHE_TTL_SECONDS = "120"
+META_PIXEL_ID = "1093337934791191"
+SITE_ORIGIN = "https://ecosystemsca.net"

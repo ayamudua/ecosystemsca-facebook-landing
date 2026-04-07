@@ -202,12 +202,19 @@ function validateStep(index) {
 
 function getTrackingPayload() {
   const params = new URLSearchParams(window.location.search);
+  const fbclid = params.get("fbclid") || "";
+  const fbp = readCookieValue("_fbp");
+  const existingFbc = readCookieValue("_fbc");
+
   return {
     utmSource: params.get("utm_source") || "facebook",
     utmMedium: params.get("utm_medium") || "paid-social",
     utmCampaign: params.get("utm_campaign") || "",
     utmContent: params.get("utm_content") || "",
-    fbclid: params.get("fbclid") || ""
+    fbclid,
+    fbp,
+    fbc: existingFbc || buildMetaFbcValue(fbclid),
+    leadEventId: generateLeadEventId()
   };
 }
 
@@ -280,6 +287,7 @@ async function submitLead(event) {
       throw new Error(payload.message || "Unable to send your request right now.");
     }
 
+    trackMetaLeadSubmission(payloadBody);
     hasSubmittedSuccessfully = true;
     closeExitIntent();
     showSubmissionConfirmation(payloadBody, payload.message || "Your request is recorded. Choose your appointment below.");
@@ -919,6 +927,63 @@ function clearBookingStatusPollingTimer() {
 
   window.clearTimeout(bookingStatusPollTimer);
   bookingStatusPollTimer = 0;
+}
+
+function trackMetaLeadSubmission(payload) {
+  const eventId = payload?.tracking?.leadEventId || "";
+
+  if (!eventId || typeof window.fbq !== "function") {
+    return;
+  }
+
+  try {
+    window.fbq(
+      "track",
+      "Lead",
+      {
+        content_name: "Flat Roof Lead",
+        currency: "USD",
+        value: 1
+      },
+      {
+        eventID: eventId
+      }
+    );
+  } catch {
+    // Ignore browser pixel failures; the Worker sends the server-side companion event.
+  }
+}
+
+function readCookieValue(name) {
+  const encodedName = `${encodeURIComponent(name)}=`;
+  const cookies = document.cookie ? document.cookie.split(";") : [];
+
+  for (const cookie of cookies) {
+    const trimmedCookie = cookie.trim();
+    if (!trimmedCookie.startsWith(encodedName)) {
+      continue;
+    }
+
+    return decodeURIComponent(trimmedCookie.slice(encodedName.length));
+  }
+
+  return "";
+}
+
+function buildMetaFbcValue(fbclid) {
+  if (!fbclid) {
+    return "";
+  }
+
+  return `fb.1.${Date.now()}.${fbclid}`;
+}
+
+function generateLeadEventId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+
+  return `lead-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function schedulePostSubmitRedirect(payload, booking) {
